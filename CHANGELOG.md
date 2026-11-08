@@ -8,6 +8,293 @@ metadata and the backend fallback mirror it.
 
 ## [Unreleased]
 
+## [0.5.8] — 2026-11-08
+
+**AMD and Intel GPUs now speed up OmniVoice, and setup gets far more forgiving.** OmniVoice GGUF runs on AMD, Intel and NVIDIA GPUs through Vulkan on Windows and Linux, dots.tts arrives on Windows with no Python setup, and a failing PyTorch download or a broken GPU no longer leaves you without a working app.
+
+**Download**
+
+| Platform | Installer |
+| --- | --- |
+| Windows x64 | [Installer](https://github.com/debpalash/VoiceStudio/releases/download/v0.5.8/VoiceStudio-0.5.8-win-x64.exe) |
+| Windows ARM64 (experimental) | [Installer](https://github.com/debpalash/VoiceStudio/releases/download/v0.5.8/VoiceStudio-0.5.8-win-arm64.exe) |
+| macOS Apple Silicon | [DMG](https://github.com/debpalash/VoiceStudio/releases/download/v0.5.8/VoiceStudio-0.5.8-mac-arm64.dmg) |
+| macOS Intel | [DMG](https://github.com/debpalash/VoiceStudio/releases/download/v0.5.8/VoiceStudio-0.5.8-mac-x64.dmg) |
+| Linux x64 | [AppImage](https://github.com/debpalash/VoiceStudio/releases/download/v0.5.8/VoiceStudio-0.5.8-linux-x64.AppImage) · [deb](https://github.com/debpalash/VoiceStudio/releases/download/v0.5.8/VoiceStudio-0.5.8-linux-x64.deb) |
+| Android | [APK](https://github.com/debpalash/VoiceStudio/releases/download/v0.5.8/VoiceStudio-0.5.8-android.apk) · [AAB](https://github.com/debpalash/VoiceStudio/releases/download/v0.5.8/VoiceStudio-0.5.8-android.aab) |
+| iPhone | [Unsigned IPA](https://github.com/debpalash/VoiceStudio/releases/download/v0.5.8/VoiceStudio-0.5.8-ios-unsigned.ipa) (sideload with your own Apple ID) |
+
+**Upgrading:** Install over your existing app; voices, projects and settings are kept.
+
+**Highlights**
+
+- OmniVoice GGUF uses AMD, Intel and NVIDIA GPUs through Vulkan on Windows and Linux
+- dots.tts voice cloning now runs on Windows through audio.cpp, with no Python setup
+- Convert can keep your delivery, changing only the voice
+- Dubbing exports subtitles before dubbing and moves lines between speakers
+- Setup falls back to the CPU build when PyTorch downloads fail, and the app falls back to the CPU when the GPU fails
+
+
+### Changed
+
+- Account sign-in is available in every build, still off until you turn it on, and now starts on the VoiceStudio dashboard with a separate Sign up option (#3850)
+- The Pro page in the app now shows the correct $199 Lifetime price (#3831)
+- Mac releases use an Apple API key for notarization instead of an account password. (#3775) — thanks @velixio!
+- Source development now prepares the local API environment before launching Electron (#3637)
+- Remove obsolete screenshot and source-archive helpers that targeted the retired UI layout. (#3623)
+- Removed unused development tools (pytest-cov, Turborepo and a duplicate TypeScript) from the repository and fixed the remaining broken documentation links (#3571, #2603, #2903) — thanks @themrbeasley and @marciok!
+- Workflows open at /workflows framed to their steps, Calls opens at /calls, and an unknown address shows Page not found (#3547)
+- Projects lists projects under All projects with voices, transcripts, takes and exports grouped under Library; saving a dub now lives in Dubbing (#3547)
+- The OmniVoice sidecar availability check no longer imports the model, so backend startup reconcile finishes about 6 s sooner (#3534) — thanks @adrianchen91!
+- The first-run install screen is cleaner: one progress bar, a step checklist that shows the package being installed, and Cancel and the log inside the progress card (#3534) — thanks @meisolated!
+
+### Added
+
+- Settings → Account has a Refresh button that reloads your profile and plan (#3850)
+- When the large PyTorch download keeps failing, setup now offers a much smaller CPU version so you still get a working app (#3846)
+- VoiceStudio now tests your GPU on startup and uses the CPU, with a notice, if the GPU fails (#3845)
+- Crash reports now show what was running and how much memory was free, so out-of-memory crashes are easy to spot (#3844)
+- Install and startup failures now name a cause, show the fix first and fill in their own bug report; setup warns about Smart App Control and tests Python before the large download (#3810)
+- Add an Arch Linux development source package with package-managed updates (#3771)
+- Add Android release updates through Obtainium and a publisher-operated F-Droid repository. (#3765)
+- Prepare a bundled, signed runtime and persistent folder grants for private Mac App Store validation. (#3755)
+- Allow explicit external TestFlight beta uploads while keeping internal testing as the default. (#3749)
+- Let Android and iOS users try models below the recommended RAM, with clear warnings and the existing licence and download checks. (#3738)
+- Add native Donate, Pro information and Other Apps pages to iOS and Android, with offline artwork and translated copy. (#3728)
+- Opt-in Settings switch fills [pause] markers and audiobook gaps with the take's own room tone instead of digital silence (#3615, #3611) — thanks @carmoe-prog for the idea!
+- OmniVoice GGUF uses AMD, Intel and NVIDIA GPUs through Vulkan on Windows and Linux, sizes its model to the GPU, adds a model quant picker with Download, and offers a one-time Use GPU prompt when PyTorch has no GPU (#3615, #3599) — thanks @dutch2005!
+- Galician (Galego) is now available as an app language on desktop and mobile (#3594) — thanks @B1NAR10!
+- Supermetry joins as VoiceStudio's first Strategic Sponsor, shown in SPONSORS.md, the README and the in-app Support page (#3583)
+- dots.tts now runs on Windows too: the new audio.cpp dots.tts engine clones voices in many languages with no Python setup, and Model Catalogue installs and removes each audio.cpp model on its own (#3574, #2665) — thanks @HuntingSuccubus!
+- Convert can now keep your delivery: turn on Keep my delivery to change only the voice while your timing, pauses and intonation stay as recorded (needs CosyVoice 3) (#3573, #3421)
+- A transcribed video can be exported before dubbing: subtitles of the edited transcript, or the original video with burned-in subtitles (#3555, #3393) — thanks @EntityinArray!
+- Dubbing lines can be moved to another speaker or a new speaker, one at a time or in a selection, and take that speaker's voice (#3555, #3515) — thanks @iamhrhp!
+- Audiobook scripts show a live chapter outline: click a `#` heading to jump there, see spoken-word counts, and insert a new chapter from the markup toolbar (#3541) — thanks @mvanhorn!
+- Urdu speech reads numbers, years, percentages and decimals in Urdu words instead of raw digits (#3540) — thanks @maatitechnologies-hue!
+- Transcribe adds an Identify speakers switch in accurate mode, with speaker labels in segments and exports (#3535) — thanks @adrianchen91!
+- Dubbing can jump between flagged transcript segments, including offscreen rows, with Previous and Next issue controls (#3535) — thanks @Thakay!
+- Voice Cloning's Emotion button is always on the composer and adapts to the engine — sliders on IndexTTS2, a written direction on CosyVoice 3 and VoxCPM2, and a clear explanation elsewhere; Insert menus gray out tags the engine would read aloud (#3422)
+- Nix / NixOS users can build and run VoiceStudio from source with the new community-maintained flake (#2961) — thanks @shamil2!
+- Opper is available as a named LLM provider for translation and rewriting, used only after you select it and add a key (#2668) — thanks @Felixkw12!
+- API Route is now available as a named LLM provider for translation and rewriting, used only after you select it and add a key (#2596) — thanks @DennyHo0917!
+
+### Docs
+
+- Added an install issue tracker that lists known problems by severity and fix status (#3838)
+- Showcased community video tutorials in the README (#3809)
+- Added Pro and Cloud links to README navigation (#3808)
+- Polished the README Discord community badges (#3807)
+- Added a prominent Discord badge above README platform downloads (#3800)
+- Moved the README Discord badge beside the views badge (#3799)
+- Highlighted the Discord community and enlarged the README tagline (#3798)
+- Simplified the README header text (#3797)
+- Compacted the README header and language navigation (#3796)
+- Expanded the README to 20 languages with consistent installation commands, guides and language navigation (#3791)
+- Celebrated 100,000 GitHub stars and thanked the community in all five READMEs (#3790)
+- Organize platform install methods, add Homebrew and keep Docker data on its volume (#3774)
+- Add AUR downloads and yay/pacman installation instructions to all READMEs (#3773)
+- Remove superseded implementation plans and index current guides, roadmap and retained design references (#3768)
+- Link to Nafay 3D's community VoiceStudio video tutorial at the bottom of the English and translated READMEs. (#3735)
+- Aligned the special-sponsor logo with the centered README sponsor credits. (#3721)
+- Linked strategic-sponsor logos to their GitHub repositories and added Spicrawl as a special sponsor. (#3717)
+- Align the README header icon vertically with the VoiceStudio title (#3693)
+- Enlarge the README headline, feature summary and device summary with a descending type hierarchy (#3691)
+- Feature OpenGTM, Opal and Supermetry as strategic sponsors and introduce their open-source projects in the README (#3687)
+- Place language links after the main navigation in all README headers (#3677)
+- Move README language links above the title and enlarge the header sponsor logo (#3676)
+- Direct README sponsorship inquiries to sponsor@voicestudio.sh (#3674)
+- Refresh the README and store screenshots with the default dark theme, a framed feature tour and lighter galleries (#3665)
+- Make the README platform comparison fit phone, tablet and desktop widths without sideways scrolling (#3663)
+- Add flat rose platform icons to the README download tables (#3662)
+- Group the Snap Store badge with Linux downloads under Platforms in the READMEs (#3661)
+- List laptops, desktops, servers, phones and tablets in the README device line (#3660)
+- Describe VoiceStudio as an AI voice studio in the README headlines (#3659)
+- Restore the official Trendshift ranking badge in the README headers (#3658)
+- Refresh the README with a compact header, flat badges, clear download actions and illustrated feature guides (#3653)
+- The README and Linux install guide link straight to VoiceStudio on the Snap Store (#3649)
+- The project structure guide counts the current number of backend service modules (#3610)
+- Translated READMEs (Chinese, Japanese, Korean, Russian) follow the new layout (#3604)
+- README rewritten: what VoiceStudio is up front, one platform table with downloads and status, a two-command quick start, and a Sponsors section with open slots (#3593)
+- Troubleshooting explains why Windows Smart App Control can block engine DLLs even in a signed app, and what you can do about it (#3571, #3209) — thanks @ark2006aug13-byte!
+- Install docs say every Apple Silicon Mac is supported, not only M1–M5, and explain the "not supported on this Mac" message from the Intel download (#3557, #3074) — thanks @dahaideweiba!
+- New step-by-step guide to dubbing a video with several characters, with a Hindi worked example (#3555, #3424)
+- Broken links in the deployment, Linux install and migration guides now open the right page and section (#3534) — thanks @ketpatil77!
+- Added a performance baseline with startup, memory and bundle measurements (#3534) — thanks @adrianchen91!
+- Install guides list the Snap Store, the Android APK and the sideloaded iPhone IPA (#3518)
+- New community-tested guide for running on a Radeon GPU from Windows in a WSL2 distro without Docker: ROCm 7.2.4 + librocdxg, reusable disk images, full build log ([guide](docs/install/wsl-amd-rocm.md)) (#3391)
+- Added a Korean README (#3118) — thanks @writer0713!
+- The Docker guide explains how to recover from a lost share PIN without deleting saved data or browser credentials (#3006) — thanks @jonathanwxh-cell!
+- The Windows install command now uses `irm https://voicestudio.sh/install.ps1 | iex`, so PowerShell always gets the PowerShell installer (#2973, #2982) — thanks @vincentfranstyo!
+- Fixed two broken internal links in the competitive analysis and private-API docs (#2903, #2953) — thanks @HyperionBurn!
+- The IndexTTS2 link in the expressive-TTS spec now points to the project repository instead of a dead page (#2914) — thanks @amhanesipeace!
+- The macOS guide now explains that the "damaged" dialog is Gatekeeper quarantine, not a corrupt download, and gives the Terminal fix first (#2827)
+- Added a Russian README (#2778) — thanks @IvanGrigin!
+
+### Fixed
+
+- Source startup now explains when Node.js is too old and how to upgrade before setup or Electron downloads (#3854) — thanks @velixio!
+- Signing out of your VoiceStudio account always forgets it on this device, even offline (#3850)
+- Setup keeps the install folder you choose, even if it already holds files, instead of going back to the system drive (#3847)
+- AMD cards that need a remap now work on Linux from the first run, and a ROCm install stays selected across launches and updates (#3843)
+- Dubbing no longer turns an unlisted language tag into a different language: Filipino stays Filipino, Estonian stays Estonian, and unknown tags stay unknown instead of becoming Finnish or Spanish (#3834) — thanks @teehihi!
+- Creating workflows and other content no longer fails when VoiceStudio is opened over plain HTTP on a LAN (#3827) — thanks @mertkayacs!
+- Setup detects stalled downloads, offers diagnostic logs and support links, and allows more time for large package downloads. (#3785)
+- Android voice cloning shows progress and keeps Cancel visible while protecting the selected recording (#3782)
+- Backend launch tests model supported hosts explicitly so Intel Mac packaging can finish its checks (#3754)
+- Mac App Store packages use the bundle identifier registered for VoiceStudio Pro for Mac (#3753)
+- Phone model downloads resume with background transfers, parallel ranges, automatic retries, and visible percentage, speed and time remaining (#3752)
+- Fix iOS store upload by using a Share extension identifier accepted by App Store validation. (#3744)
+- Fix iOS store export by signing the workspace widget with its registered App ID. (#3743)
+- Fix iOS store signing with the registered Share extension and App Group, and bundle required privacy declarations. (#3742)
+- When the backend never answers and prints nothing, the error now quotes the backend's own log from that launch, so you can see where startup stalled (#3724) — thanks @meutex!
+- Restored mobile Speech and Gallery, expanded offline voice models, and skipped runtime CI for documentation/test-only changes. (#3715)
+- Moving the data folder to a new location no longer fails with "identity_unavailable" on Linux, where a same-tick folder check could not see its own change (#3706) — thanks @samay-hash!
+- ASR engine rows show localized setup guidance, including NeMo’s installation warning, and name Settings → Models (#3643)
+- Startup reports blocked Python executables without automatically reinstalling intact runtimes (#3640)
+- Fix Windows installer process detection using CIM executable paths. (#3636)
+- Safely move app data into existing empty folders or mounted drives, rejecting nested destinations and preserving unrelated files during rollback (#3631) — thanks @DeryFerd!
+- Use a searchable, keyboard-accessible preset voice picker with themed menus (#3630) — thanks @DeryFerd!
+- Handle native process exit races, preserve network error diagnostics and stabilize deferred UI cleanup and screenshot-test sheet transitions. (#3629)
+- Prevent spurious permission errors when timed-out operations finish cleanup on macOS. (#3626)
+- Keep portrait search results available and disabled while another portrait is saving. (#3625)
+- Prevent Windows updates from mistaking sibling folders or the installer for a running app. (#3624) — thanks @majalali83!
+- Keep regional model downloads eligible for automatic endpoint failover and reject mirrors without usable download metadata. (#3622)
+- Prevent startup crashes from incorrectly encoded environment files. (#3621)
+- CosyVoice and the desktop bridge pick up hydra-core 1.3.8 and rustls 0.23.46; installed CosyVoice asks for one repair and keeps its model (#3615, #3597, #3598)
+- Android phones download models through hf-mirror.com CDN subdomains like iPhones do, and both refuse redirects to non-standard ports (#3615, #3609) — thanks @DeryFerd!
+- The backend no longer fails to start on Windows when a system tool prints characters the locale can't decode (#3615, #3612) — thanks @hachmit87-lab for the report!
+- The Galician interface now includes the expressive speech strings, which fixes the web build on main (#3608)
+- A voice saved or locked from a long take no longer repeats a word at the start of every chunk: takes keep their whole text, script markup such as [pause] never reaches a reference transcript, and voices saved earlier from a cut take transcribe their clip instead (#3062, #3602)
+- Radeon GPUs missing from a fixed remap table (RX 9070 on a gfx1200-only ROCm build, gfx1152, gfx1035) run on the GPU, and the setup GPU check names the installed PyTorch build and the ROCm opt-in instead of saying Windows has no ROCm build (#3418, #3602)
+- An audio.cpp runtime install on Windows no longer fails with "access denied" while antivirus scans the freshly checked binary (#2685, #3602)
+- The backend keeps answering while it frees an idle model's memory, instead of showing "not responding" (#3558, #3595)
+- First-run setup lets you continue once a different TTS engine is installed and selected, without the default model pack (#3581, #3595)
+- Dubbing's Cast picker always offers each speaker's Auto voice extracted from the video, so an override can be undone (#3582, #3595)
+- IndexTTS honours the Speed setting through its native duration control, and `/ws/tts` accepts a `duration_factor` (#3588, #3595)
+- An Intel Mac running from source now shows the remote-backend screen instead of an endless "Python environment is incomplete" error, and `bun run setup:api` explains why it cannot install (#3584, #3595)
+- The speech CLI keeps uploads well-formed for any file name, accepts numeric loopback addresses such as 127.1, and never sends local requests through a proxy (#3594) — thanks @rudycelekli!
+- English speech reads a 24-hour time on the hour as "nineteen hundred" instead of "nineteen o'clock" (#3594) — thanks @kevin9327!
+- Source checkouts on macOS 14 and older start with `bun run dev` again instead of failing on a missing `lockf` (#3594) — thanks @sebas-rodri!
+- Reopening a designed voice saved with seed 0 keeps that seed instead of picking a new one (#3590)
+- With the Auto download region, setup now uses the Aliyun PyPI mirror when a quick one-wheel speed check finds it faster than PyPI, so users in China get the mirror without choosing it (#3576, #3444)
+- CosyVoice 3 installed from source now gets its system prompt for directed, cloned and cross-lingual takes, matching the managed engine (#3575)
+- Dubbed lines now start on detected speech, so a sigh, breath or footstep before a line no longer makes it start early, and trailing breaths no longer pad its slot (#3573, #3419)
+- VoxCPM2 generates again on NVIDIA GPUs when it runs in the main engine, instead of failing every time with a CUDA graph assertion (#3571, #3567) — thanks @Fguarien!
+- The OmniVoice GGUF engine now works out of the box: Windows, Apple Silicon and Linux installers ship its native runtime (#3569, #2780) — thanks @DestinyQJY and @chiarorosa!
+- OmniVoice on an older NVIDIA GPU that the installed PyTorch has no kernels for now shows as running on the CPU and gets the CPU time allowance, so slow renders are not cut short (#3565, #3067)
+- When Windows Smart App Control, an application control policy or an antivirus blocks one of the engine's files, the error names the blocker and VoiceStudio no longer re-downloads the runtime (#3557, #3209, #3224) — thanks @ark2006aug13-byte and @pauloerv-sketch!
+- First-run setup downloads large wheels such as the Windows CUDA `torch` over several connections and resumes them after Cancel or Retry, instead of crawling at about 1 MB/s on networks that limit each connection (#3557, #3411, #3060, #3202) — thanks @justcallme-A and @hadialshaer!
+- The app no longer crashes with an "insertBefore" error when browser page translation or an extension changes the page (#3555, #3168) — thanks @wwwfelipe29-ai!
+- An engine install that needs a C++ compiler, such as CosyVoice 3, now says which build tools to install instead of blaming the network (#3553, #3423)
+- Switching Linux to the AMD ROCm build of PyTorch finishes setup instead of failing on a Pillow version conflict (#3553, #3158) — thanks @Blade-pt and @prashker!
+- Older NVIDIA GPUs that the installed PyTorch has no kernels for (such as Maxwell cards) now show as running on the CPU instead of "CUDA ready" (#3553, #3067) — thanks @BheeshamKS!
+- Voice cloning on Mac no longer fails with "couldn't synthesize audio" after a clone without reference text (#3552, #3551) — thanks @macfluryy!
+- Opening Calls after visiting Integrations no longer crashes the Calls page (#3550)
+- Gallery switches sections in the page header, Community gains search and lists each voice once, and the saved-voice list highlights only the current voice (#3547)
+- The navigation keeps one layout on every page, the bottom player no longer covers the nav rail, and the Pro page header clears the account corner (#3547)
+- Command search finds pages by short names such as clone, models, integrations, pro and dark, and lists recent takes once with their age and length (#3547)
+- Script samples and placeholders in every language show literal [pause 0.5s] and [voice:NAME] markup, and uncast characters get one calm note instead of warnings (#3547)
+- Interrupted Stories and Audiobook renders show once per project on their own page, explain a disabled Resume, and can be dismissed (#3547)
+- Every workspace shows the same not-ready notice with one Set up action, and disabled buttons now say why (#3547)
+- Audiobook and Dubbing stay usable in short windows: the script editor and segment list keep their room, and find, stage and readiness notes share one slim strip (#3547)
+- The Hearth light theme uses a non-red colour for primary buttons, keeping red for destructive actions (#3546)
+- Settings opens on General, page names match their contents, and the breadcrumb shows the model family (#3546)
+- Settings → Credentials has one Save per translation provider, and Settings Save buttons enable only after a change (#3546)
+- Model rows name their licence type, show sizes in one unit style, and drop the duplicate Selected button (#3546)
+- Performance presets no longer switch Apple Silicon transcription from MLX to CPU Faster-Whisper (#3546)
+- Model packs preselect the largest pack that fits your free disk space instead of Max (#3546)
+- Settings → Storage shows one low-disk warning, and the disk bar turns amber or red when nearly full (#3546)
+- Settings search lists only matching pages and finds Theme by "dark" or "light" and model families by name (#3546)
+- Settings → Usage no longer says VoiceStudio has no analytics; optional analytics is controlled in Privacy (#3546)
+- Settings → Updates "What's new" shows formatted release notes instead of raw markdown tables and links (#3546)
+- Job progress history repairs duplicate event numbers so replayed progress never skips or repeats a step (#3542) — thanks @sedatdagg!
+- Long transcriptions no longer repeat themselves, and the transcription model stays loaded between requests (#3542) — thanks @gifmac!
+- The OmniVoice GGUF runtime builds for every x86-64 CPU, and a runtime that hits an illegal instruction is reported clearly (#3542) — thanks @inteligencia66!
+- Streamed generations and long-form renders stay connected behind proxies such as Cloudflare while a slow chunk or chapter renders (#3542) — thanks @fouadSalkini!
+- `bun run start` and `bun run preview` launch the desktop app again on a fresh checkout (#3542) — thanks @inteligencia66!
+- Turning off Tailscale sharing removes only VoiceStudio's own share and never resets other apps' Tailscale serve settings (#3542) — thanks @hiiqbiz-wq!
+- Saved Voice Design profiles preserve natural-language prompts across reopening, previewing, and portable export/import (#3541) — thanks @XiaoPuOuO!
+- Audiobook and Stories renders keep cached chapters during overlapping resumes, stay responsive while preparing the cache, and remove incomplete outputs when assembly fails or is cancelled (#3540) — thanks @Bortlesboat!
+- GPU acceleration report names a card the installed PyTorch build has no kernels for, instead of reporting a CUDA start that would work and pointing at a driver update that cannot add them (#3540) — thanks @Faisal-Fayaz!
+- Long text between `[pause]` markers is split into sentence chunks like unmarked text, so a long passage next to a pause no longer degrades into garbled audio (#3540) — thanks @maatitechnologies-hue!
+- Long Urdu, Persian, Arabic and Hindi scripts split at sentence ends and clause marks instead of mid-sentence, even with no space after the mark (#3540) — thanks @maatitechnologies-hue!
+- File transcription no longer cancels when you leave the Transcribe page; the result is saved and a toast links back to it (#3535) — thanks @adrianchen91!
+- The dubbing timeline stays visible when a transcript cue is selected, including in long transcripts and compact windows (#3535) — thanks @BichengWang!
+- MLX-Audio OuteTTS voice cloning reads the reference clip with a Whisper model installed from Model Catalogue instead of hanging on a download, and reuses the voice on later generations (#3535) — thanks @kevin9327 for the fix and @unovlad for the report!
+- Space-grouped thousands like 1 234 or 10 000 keep their digits in French, German, Russian and other comma-decimal languages (#3535) — thanks @NishchayMahor!
+- Bug reports now redact a nonstandard home folder even when punctuation follows it (#3534) — thanks @zichen0116!
+- Updated DOMPurify and proxy-addr to versions that fix published security advisories (#3534) — thanks @anupamme!
+- Voice Cloning sends manually entered reference transcripts with saved voices instead of dropping them before synthesis (#3534) — thanks @isnaenihidayat!
+- Convert no longer reads short non-Latin clips (e.g. Armenian) as the wrong language: pick the source language, or it follows the target voice's language (#3534) — thanks @YuraZakaryan!
+- Desktop releases now include Android and iPhone sideload downloads from the same version, without Apple signing blocking the iPhone file (#3516)
+- Prevent reset and uninstall cleanup from deleting data through lookalike or linked folders. (#3512)
+- Error banners show diagnosed problems in your language with a button that fixes them, such as installing a speech-to-text model, freeing memory or opening Storage (#3511)
+- A running Story or Audiobook render stays visible after you leave its page: the other book page and the notifications bell show its progress with Show progress and Stop, and interrupted Stories renders can be resumed (#3510)
+- Source checkouts with a missing Python environment get Retry instead of a folder picker that could not work, and installed apps never show the developer setup command (#3508)
+- A finished runtime setup no longer offers "Resume interrupted download", and Resume reuses the existing environment and download cache instead of fetching PyTorch again (#3508)
+- Windows runtime refreshes retry and update files in place when OneDrive, antivirus or a running backend locks them, and a lasting lock now says which program to close (#3507)
+- Windows setup that crashed with exit code 3221225477 on an outdated Visual C++ runtime now names the cause and tells you to update the Microsoft Visual C++ Redistributable (#3507)
+- Russian labels read naturally in Export, Audiobook, About and seed controls (RAM, stems, cover, seed) (#3479) — thanks @al2m!
+- Caption imports keep ruby base words without speaking pronunciation guides or losing later cues (#3360) — thanks @014-code!
+- Percentages now speak the trailing zeros that were written, so 2.50% is two point five zero percent (#3359) — thanks @kevin9327!
+- On Apple Silicon, the Quality and Max model packs install and use Whisper on the GPU (MLX) instead of a CPU-only copy (#3349) — thanks @bee-interactive!
+- Locking a take keeps its whole text as the voice's reference transcript, instead of cutting it at 100 characters (#3320) — thanks @bercedev!
+- Markdown bold and italic markers are stripped before synthesis instead of being read aloud as "asterisk" (#3197, #3205) — thanks @swadhinbiswas!
+- Cmd/Ctrl+Z in a Dub page field such as the glossary, translation notes or a segment's Start/End now undoes your typing there instead of the last transcript edit, and Cmd/Ctrl+S on a timeline segment no longer snaps it to the nearest onset (#3199) — thanks @HEOJUNFO!
+- MOSS-TTS-Nano reuses the configured tokenizer cache instead of nesting another cache inside its model code and exceeding Windows path limits (#3137, #3167) — thanks @ZFzuofeng!
+- Startup no longer loads unused OmniVoice weights when another speech engine is selected (#3127) — thanks @isnaenihidayat!
+- Smart Fit keeps overlapping speakers and captions on one timeline without replaying shared video (#3008) — thanks @jonathanwxh-cell!
+- Dubbing segment Start and End fields no longer round the time when you tab through them without typing (#2986) — thanks @HEOJUNFO!
+- Model downloads show honest overall progress instead of a bar that jumps backwards or under-reports while several files are in flight (#2936, #2952) — thanks @DeryFerd!
+- Local marketplace installs keep designed voices and their saved design settings (#2878) — thanks @agammann!
+- CosyVoice's one-click install now resolves on Linux ARM64, with or without an NVIDIA GPU (#2830) — thanks @Jason69628723!
+- The macOS menu-bar icon now uses a correctly sized monochrome glyph that follows the system appearance (#2750, #2828) — thanks @Fredy002 and @windery!
+- On macOS, the app icon is no longer oversized in the Dock, Launchpad and Finder (#2744, #2749) — thanks @windery!
+- Intel Arc (XPU) GPUs load models on Windows and recover from out-of-memory errors instead of failing every later request until a restart (#2747) — thanks @nur-zaman!
+- Settings → System reports an Ascend NPU host's device name and VRAM, and the memory-flush snapshot reads the NPU and Intel XPU (#2582) — thanks @li-lizhe!
+
+### License
+
+- Korean and a few other interface strings, the pronunciation list's "not applied yet" badge and Malayalam number reading that still came from contributions without a signed CLA are rewritten from scratch, with no change in behaviour (#3613)
+- A copied test helper that still matched an earlier contribution without a signed CLA is rewritten from scratch (#3607)
+- The last few code passages and docstrings that still resembled earlier contributions without a signed CLA are reimplemented from scratch, with no change in behaviour (#3606)
+- One more test that matched an earlier contribution without a signed CLA is rewritten from scratch (#3601)
+- The remaining code, tests and docs that still matched earlier contributions without a signed CLA are reimplemented from scratch, with no change in behaviour (#3596)
+- The proxy keepalive for streamed generation and a few English interface strings that still came from earlier contributions without a signed CLA are reimplemented from scratch, with no change in behaviour (#3591)
+- Sherpa-ONNX Piper voice loading, the pyannote audio adapter, native dictation start/stop handling and a few smaller pieces that still came from earlier contributions without a signed CLA are reimplemented from scratch, with no change in behaviour (#3587)
+- Korean and Simplified Chinese translations that still came from earlier contributions without a signed CLA are retranslated from scratch, with no change to keys or behaviour (#3586)
+- The last English strings and tests from earlier contributions without a signed CLA are reimplemented from scratch, with no change in behaviour (#3580)
+- More code and translations from earlier contributions without a signed CLA are reimplemented from scratch, with no change in behaviour (#3578)
+- More code from earlier contributions without a signed CLA is reimplemented from scratch, with no change in behaviour (#3564)
+- Code from earlier contributions without a signed CLA is reimplemented from scratch, with no change in behaviour (#3563)
+
+### CI
+
+- The iOS on-device speech test no longer fails when the small speech recognizer hears a generated "Hi" as "High" (#3852)
+- The CLA comment now links each signer's permanent signature record instead of an older pull request (#3842)
+- Pull requests with signed CLAs now get the `cla-signed` label and a comment linking the agreement and signatures automatically (#3840)
+- Retry the Android NDK and CMake install in CI when a download comes back corrupt (#3812)
+- Publish fork Docker images and registry caches under the repository owner namespace on GHCR (#3795)
+- Stabilize iOS UI checks for keyboard dismissal and gallery preset navigation. (#3746)
+- Run Apple Silicon smoke checks and native dependency builds on maintained macOS 15 runners. (#3736)
+- Reuse the existing iOS archive signing identity and keep camera hardware optional for Android store installs. (#3729)
+- Android Play builds prepare native runtimes and verify self-signed upload keys before internal testing (#3725)
+- Wait for the iOS keyboard Done control to become hittable before tapping it in smoke tests. (#3646)
+- Validate data relocation, engine setup and preset controls together against current main (#3644)
+- Disable CodeRabbit finishing-touch repair prompts on pull requests (#3641)
+- Stabilize iOS test readiness and cold-build validation, and cover ROCm recovery and batch-language interaction. (#3634)
+- Four renderer smoke tests run in CI again after a test-helper move hid them from the smoke inventory (#3600)
+- The broken-link check covers CHANGELOG.md and SPONSORS.md, so a rotted link on a repository-root page fails the suite instead of going unnoticed (#3572) — thanks @AliAladraj!
+- The Linux GGUF runtime build no longer runs out of memory on CI runners (#3569, #2780)
+- Snapcraft Builds can package VoiceStudio from the published release (#3545)
+- The iOS Home UI test reliably opens every Home card again instead of flicking cards out of view (#3543)
+- The Python test suite no longer aborts on Windows when bun was installed through npm (#3534) — thanks @shubhankarkanase90-byte!
+- Pull requests with a changelog fragment pass the changelog check again after a release (#3517)
+- Snap Store listing banner, bundled and size-checked with the other Snap listing assets (#3514)
+- iOS Home UI tests no longer break when the contributor list is reordered or a card sits under the navigation bar, building on the first fix in #3481 (#3509) — thanks @XiaoPuOuO!
+- The Electron unit tests run on Node 25+ and Homebrew Node without extra flags (#3469) — thanks @BichengWang!
+- The backend registry test expects the OmniVoice sidecar on Apple Silicon, so it passes on every host (#2697) — thanks @rollroyces!
+
 ## [0.5.7] — 2026-10-26
 
 **First, an apology.** This release took much longer than it should have. Urgent family matters kept me away for a while, and I'm sorry for the wait and for the issues that sat unanswered meanwhile. Thank you for your patience and for every report, fix and kind word in the meantime.
@@ -1139,8 +1426,8 @@ This release also lets you replace a saved clone's reference sample, clones long
 
 - Edit a saved voice clone's reference sample: play it, replace it by upload or recording, and save back to the same voice (#2282) — thanks @Cengokill!
 - Answer Twilio phone calls in a saved voice: off by default, signed webhooks and single-use stream tokens, with a local phone-quality test (#2291)
-- Malayalam dubs and audiobooks speak numbers, percentages, and decimals in Malayalam instead of reading raw digits (#2280) — thanks @nikhilkilivayil!
-- Download a chapter cue sheet (`HH:MM:SS<TAB>Title`) after a Stories or Audiobook render; timestamps match the M4B's embedded chapters and give MP3 portable chapters (#2278) — thanks @shivsin25!
+- Malayalam numbers, percentages and decimals are now spoken as Malayalam words instead of raw digits (#2280) — thanks @nikhilkilivayil!
+- Download a TAB-separated chapter cue sheet after Stories or Audiobook renders, with M4B-matching timestamps that give MP3 files portable chapter markers (#2278) — thanks @shivsin25!
 - The OpenAI Agents integration page gives a copyable snippet that runs the Agents SDK voice pipeline on VoiceStudio (#2290)
 - The OpenAI-compatible API adds `GET /v1/models` and `POST /v1/audio/translations` (multilingual Whisper models; turbo models are refused) (#2290)
 - Speech requests accept `stream_format` (`audio` or `sse`) and OpenAI's `{"id": ...}` voice object (#2290)
@@ -1265,16 +1552,16 @@ Already using Electron? Install over your existing app and keep your data. If pr
 
 ### Changed
 
-- The main sidebar (navigation, voice library, status) stays in place on Settings instead of being swapped for a separate panel; the Settings sections now sit in a column beside it (#2209) — thanks @jaketame!
-- The main navigation sits directly under the sidebar header, above the voice library, so it no longer moves with the library's height (#2210) — thanks @jaketame!
+- Settings keeps the main sidebar in place and lists its sections in a column beside it (#2209) — thanks @jaketame!
+- The main navigation now sits right under the sidebar header, above the voice library (#2210) — thanks @jaketame!
 
 ### Added
 
 - Claude Code and Cursor integration pages offer MCP setup for the current backend, and duplicate catalog routes are consolidated (#2257)
 
-- Settings → Appearance → Keep sidebar expanded: stops the sidebar shrinking to a rail when Projects, Transcribe, Tools or another workspace opens its own panel on a narrower window (#2211) — thanks @jaketame!
+- Settings, Appearance: a Keep sidebar expanded switch stops the sidebar shrinking to a rail beside a workspace panel (#2211) — thanks @jaketame!
 - Stories and Audiobook: a Clear script button empties the whole script — every line and chapter, imported or typed — in one confirmed step instead of one trash icon at a time; the cast is kept (#2203) — thanks @jaketame!
-- Stories' Paste & Split can now split by Sentences, Paragraphs (the new default) or whole Chapters, so a single narrator is no longer chopped into one take per sentence (#2217) — thanks @jaketame!
+- Stories' Paste & Split can cut pasted text by sentence, paragraph or chapter, and chapter headings always stay as separate lines (#2217) — thanks @jaketame!
 
 ### Fixed
 
@@ -1291,8 +1578,8 @@ Already using Electron? Install over your existing app and keep your data. If pr
 - Source Electron launches reuse the prepared Python runtime instead of downloading dependencies inside the startup timeout (#2184)
 - Clone, Stories and Audiobook disable unsupported output-language choices for engines with a declared language list (#2104)
 
-- Stories and Audiobook: Generate, the chapter tracker and the render status are pinned in the setup pane instead of sitting below the last line of the script, and a disabled Generate now says why (#2229) — thanks @jaketame!
-- EPUB import no longer turns an unmarked teaser page, a "Works by" list, a publisher's address page or a stray footnotes page into chapters — the book's declared start and its contents decide what is front and back matter (#2228) — thanks @jaketame!
+- Generate, the chapter tracker and render status stay pinned in the setup pane, and a disabled Generate says why (#2229) — thanks @jaketame!
+- EPUB import no longer turns untagged excerpts, epigraphs, blurbs and trailing footnote or advert pages into chapters, and still keeps genuine prologues (#2228) — thanks @jaketame!
 - Retry temporary media-tool installation locks and report failed cleanup instead of hiding it (#2214) — thanks @baoyu0!
 
 - The desktop app points the backend at the `uv` it already ships, so one-click engine installs stop failing preflight with "uv was not found" on a clean install — the packaged binary sits in the app's own resources directory, which is on no `PATH`, and a GUI launch inherits none of the shell's `PATH` additions either (#2221, #2215) — thanks @shivsin25 for the fix and @baoyu0 for the diagnosis!
@@ -1300,14 +1587,14 @@ Already using Electron? Install over your existing app and keep your data. If pr
 - VoxCPM2 voice design uses its native control format, and style requests no longer inherit the reference transcript’s delivery (#2093) — thanks @nevilbutani and @martinezpl!
 - Dubbing background preservation and long exports work with newer FFmpeg builds that removed the legacy filter-file option (#2236) — thanks @quan0pek!
 
-- Stories: the book-wide reading speed moved from the bottom of the collapsed Cast card to the setup card beside voice and language, shows how many lines override it, and resets them in one click (#2230) — thanks @jaketame!
-- Projects: a finished Story or Audiobook shows its title and how it was made (voice, speed, engine, length, settings) instead of a bare filename (#2233) — thanks @jaketame!
-- Audiobook and Stories renders no longer sound broken between lines: each line's engine padding is trimmed and a deliberate, adjustable gap goes between lines and paragraphs instead (#2216) — thanks @jaketame!
+- Stories moves the whole-book speed into the setup card, tells you how many lines override it, and lets you clear those overrides at once (#2230) — thanks @jaketame!
+- Finished renders in Projects carry their title, a short voice · speed · engine · length summary and a foldout listing how they were made (#2233) — thanks @jaketame!
+- Audiobook and Stories renders gain optional silence trimming plus adjustable pauses between lines and paragraphs, capped per chapter; leaving them at zero keeps existing audio unchanged (#2216) — thanks @jaketame!
 - Repair dots.tts dependency pins and paths containing spaces, with OpenFst build guidance for source installs (#2101) — thanks @martinezpl!
 
 - Reject unsupported synthesis languages before model loading, including named picker choices and per-item batch languages (#2219) — thanks @rollroyces!
-- EPUB import narrates the book, not its print furniture: page numbers no longer glue onto words or appear as lone lines, cover/title/dedication/copyright/contents pages are skipped, and chapters are titled from the book's table of contents (#2208) — thanks @jaketame!
-- Stories: a long script no longer paints over the generation progress panel and the Generate/Stop footer while an audiobook renders (#2213) — thanks @jaketame!
+- EPUB import skips print page numbers and cover, title, dedication, copyright and contents pages, and names chapters from the table of contents (#2208) — thanks @jaketame!
+- A long script no longer draws over the progress panel and the Generate/Stop footer (#2213) — thanks @jaketame!
 - Keep macOS dictation keyboard operations on the main thread to prevent paste-delivery crashes (#2123)
 - Prevent reference voice cloning from silently downloading a second speech recognizer (#2116)
 - Dubbing from a video's downloaded rolling captions speaks each line once while preserving intentional repeated dialogue (#2222) — thanks @kevin9327!
@@ -1520,12 +1807,12 @@ v0.5.3 is also the final Tauri update. The Tauri updater will not switch you to 
 - The Engines menu's Transcription tab picks the dictation model under Sherpa-ONNX, and that choice now also drives Sherpa transcription (#1952)
 - A failure with no stage attached no longer borrows another stage's advice, so a text-to-speech error stops telling you the video server dropped the download (#1943)
 - A generation failure that the app cannot classify now names the backend error class, so two unrelated faults stop arriving as the same untriageable report (#1800)
-- Transcriptions dictation wakes the desktop recorder, presents one contextual start action, and centers its microphone icon with the label (#1902)
-- Colab transcription and dubbing now include an explicit ASR model setup step (#1922) — thanks @nidhi-singh02!
-- Apple Silicon now shows one canonical OmniVoice choice in the engine picker while retaining its automatic crash-isolated sidecar runtime (#1913)
+- Dictation on the Transcriptions page now wakes the desktop recorder, offers a single start action that fits the moment, and centres the microphone icon beside its label (#1902)
+- The OmniVoice picker on Apple Silicon has one entry, backed automatically by the isolated worker (#1913)
+- Unstable links no longer discard already-fetched model ranges between download attempts (#1940)
+- Windows development startup can reclaim VoiceStudio ports from its own abandoned processes (#1941)
+- Colab transcription and dubbing now include an explicit step to install the speech-to-text model, with clearer errors when it is missing (#1922) — thanks @nidhi-singh02!
 - Validate current-user Windows installers under a standard account on hosted runners (#1883)
-- Model downloads survive a flaky connection instead of restarting from zero (#1940)
-- `bun run dev` recovers on Windows instead of demanding Task Manager (#1941)
 - The desktop app builds and opens from a fresh clone again (#1818) — thanks @flutterkage2k!
 - GPUs with less VRAM than the engine needs no longer get half the compute-time budget a CPU gets (#1806) — thanks @VishvakR!
 - Gallery voice previews play again — the quality guard was rejecting good renders as silent (#1819) — thanks @flutterkage2k!
@@ -1586,9 +1873,9 @@ v0.5.3 is also the final Tauri update. The Tauri updater will not switch you to 
 
 ### Docs
 
-- PowerShell Docker setup now generates the administrator key without requiring Python on the host (#1993) — thanks @yangfan-yf-yf!
+- PowerShell Docker setup now creates its administrator key with .NET cryptography, without requiring Python on the host (#1993) — thanks @yangfan-yf-yf!
+- Docker quick starts now identify the AMD64-only images and direct Apple Silicon users to the accelerated native macOS app (#1921) — thanks @yangfan-yf-yf!
 - The torch upgrade an RTX 50-series card needs is written down, with the second pin file the resolver checks and the command that proves the kernels are there (#1931)
-- Docker quick starts now explain the AMD64-only images and direct Apple Silicon users to the native macOS app (#1921) — thanks @yangfan-yf-yf!
 - audio.cpp (Breeze-TTS-2) is now a documented opt-in engine: prebuilt binary install, explicit GGUF download, voice modes, and the weights' research/non-commercial terms (#1891)
 - `docs/STRUCTURE.md` describes the tree as it is today, and a test now keeps its counts honest (#1981) — thanks @Dawcraft!
 - Local gigastt is now documented as a supported OpenAI-compatible ASR endpoint, with loopback privacy distinguished from remote servers (#1736) — thanks @ekhodzitsky!
@@ -1615,24 +1902,24 @@ v0.5.3 is also the final Tauri update. The Tauri updater will not switch you to 
 - A port-3900 conflict now names who is actually holding it, and gives the command that ends an orphaned backend, instead of telling you to quit an app that has no window (#1933) — thanks @Chang-Jin-Lee!
 - Windows desktop launches no longer freeze at "Loading ML runtime (PyTorch)": the parent-liveness watchdog polls the stdin pipe instead of leaving a read pending, which deadlocked numpy's OpenBLAS initializer (#1952, #1955)
 - `bun desktop-prod` and `bun desktop-fresh` find Rust and uv from a terminal opened before they were installed, as `bun desktop` already did; a missing Rust toolchain fails up front with the install steps (#1952)
-- Voice synthesis progress no longer races to a fabricated 95%; it stays indeterminate until the active generation path reports real progress (#1907) — thanks @psiberfunk!
+- The synthesis progress bar no longer invents a percentage from elapsed time; it stays indeterminate until the generation path reports real progress (#1907) — thanks @psiberfunk!
 - The Backend log tab keeps showing history across a log rollover, instead of going nearly empty until new lines arrive (#1920)
 - Clearing the logs now empties the rotated log files too, so it frees the space it appears to (#1920)
 - An error thrown by a browser extension no longer offers to file itself as a VoiceStudio bug (#1901)
 - Clearing the desktop logs no longer wipes the backend's stderr, which is the only record a native crash leaves behind and is meant to survive a respawn (#1510)
-- Long audiobook chapters now use the same device- and text-length-aware synthesis timeout as other TTS routes (#1910) — thanks @psiberfunk!
-- Interrupted audiobook renders can resume cached chapters after tab navigation, and their chapter cache is available from the recovery card (#1911) — thanks @psiberfunk!
+- Audiobook chapter deadlines now account for both host speed and narration length (#1910) — thanks @psiberfunk!
+- The Audiobook tab can continue an interrupted book from completed chapters and reveal their storage folder (#1911) — thanks @psiberfunk!
 - System-check details and storage paths beginning with a number or a slash no longer render with their leading text moved to the end of the line (#1848) — thanks @psiberfunk!
 - An unavailable engine's row now links to that engine's guide, so the generic "check installation and configuration" message has somewhere to send you (#1866) — thanks @psiberfunk!
 - The backend log now records which engine failed a health check and whether its probe raised, instead of a line that identified neither (#1866) — thanks @psiberfunk!
 - The first-run Activity log counts every line instead of freezing at 200 while the install is still running, and Copy now hands back the whole run rather than the last 200 lines (#1847) — thanks @psiberfunk!
 - A first-run failure that happened early in a long install keeps its specific advice, instead of falling back to the generic retry hint once the log scrolled past 200 lines (#1847) — thanks @psiberfunk!
 - Opening the log panel no longer clips the Launchpad's heading and slides the feature cards up over it — the page scrolls instead of squashing itself (#1859) — thanks @psiberfunk!
-- Segmented model downloads split files into 16 MB ranges instead of one range per connection, so a dropped connection refetches one range rather than restarting the file (#1940)
-- The download accelerator is kept across retries after a transient network failure and resumes from its manifest, instead of falling back to a from-zero `snapshot_download` (#1940)
-- `dev-backend.mjs` stops the backend by process tree on Windows, so an orphaned uvicorn no longer holds port 3900 and turns a source reload into three phantom crashes (#1941)
-- `clear-dev-ports.mjs` can free a stuck development port on Windows again, bound to the inspected process instance so a recycled pid is never terminated (#1941)
-- Checkout-ownership matching no longer resolves POSIX paths with the host's separator, which made the guard's own test fail on Windows (#1941)
+- Resumable model transfers commit progress in ranges no larger than 16 MB (#1940)
+- Transient transfer retries keep the accelerator and its saved range map available (#1940)
+- Windows backend reloads end the uv and uvicorn process tree together (#1941)
+- Development port cleanup verifies a Windows process fingerprint before terminating it (#1941)
+- POSIX checkout paths are compared with POSIX normalization even from a Windows host (#1941)
 - Install documentation help now prints correctly on Windows consoles using legacy encodings (#1815) — thanks @dajiaohuang!
 - Saved transcriptions with missing or invalid timestamps now remain readable (#1799) — thanks @yunaremaia and @tvbht!
 - Transcribing with an engine that reports no segment end no longer fails with a server error; the null timing is passed through the way the segment list already expects (#1904) — thanks @aeroglu!
@@ -1670,8 +1957,8 @@ v0.5.3 is also the final Tauri update. The Tauri updater will not switch you to 
 - Release retries replace their own partially uploaded installers without colliding with existing assets (#1871)
 - Timed-out voice engines finish process cleanup before retrying, and old timeout callbacks cannot kill replacement engines (#1872)
 - Fast macOS process exits no longer turn a completed shutdown into a permission error (#1809)
-- The bootstrap splash no longer shows fabricated first-run install steps on a warm start or repair sync — a step now renders done only once it was actually observed (#1894)
-- A deliberate, clean quit killed by the desktop shell's short shutdown grace no longer gets reported as a crash on next launch — the run sentinel now clears before the slower shutdown steps instead of after (#1895)
+- The setup splash no longer lists install steps that never ran on a warm start or repair sync; a step shows as done only once it was actually observed (#1894)
+- Quitting on purpose is no longer reported as a crash on the next launch when the shell cuts the shutdown short, because the run sentinel now clears before the slower shutdown steps (#1895)
 - Model Catalogue engine rows stack into one column on narrow shells instead of clipping actions off-screen (#1891)
 - Simplified Chinese locale completed: all 486 missing keys translated and the parity ratchet tightened to zero (#1877) — thanks @yearth!
 - The generation compute-time budget is now a Settings control (Performance & Device) instead of an env-var-only setting the timeout error recommended with no UI path — the error copy points there too, and long CPU/MPS renders get an upfront heads-up before they start (#1787)
@@ -1679,8 +1966,8 @@ v0.5.3 is also the final Tauri update. The Tauri updater will not switch you to 
 - Exports and other native-picker actions no longer 403 with "Invalid or expired desktop authorization" when the desktop app and backend resolve different data directories, e.g. dev mode or a custom data folder (#1781)
 - Voice Design no longer lets you pick a Chinese dialect and an English accent together — the picker keeps them mutually exclusive instead of round-tripping a 400 (#1771)
 - The desktop app no longer attaches to an already-running backend on version string alone: it now verifies the backend's actual code fingerprint too, so an orphaned or manually started backend reporting the current version but running older code (e.g. a stale `destination_path` export 422) gets replaced instead of adopted (#1770)
-- Korean locale overhauled: 231 mistranslations corrected and all 493 missing keys translated (#1776) — thanks @j30231!
-- Japanese "Cleaning…" clone status now reads as denoising instead of housekeeping (#1775) — thanks @j30231!
+- Korean localization now covers the complete interface catalog, with missing text added and incorrect translations corrected (#1776) — thanks @j30231!
+- The Japanese clone-processing status now clearly indicates that audio noise removal is in progress (#1775) — thanks @j30231!
 - The batch dubbing queue now has a UI entry point — a quiet link on the Dub landing (it was previously unreachable: the app switched on a mode nothing ever set) (#1768) — thanks @mvanhorn!
 - OpenAI-compatible ASR now requires HTTPS outside loopback and refuses redirects so audio stays on the configured origin (#1736)
 - Windows isolated engines now retain direct Job ownership without an extra Python supervisor process that can deadlock the child loader (#1734)
@@ -1758,8 +2045,8 @@ v0.5.3 is also the final Tauri update. The Tauri updater will not switch you to 
 - Workspaces now measure their responsive width when the post-bootstrap shell actually mounts, so native UI scaling reflows Projects and History instead of crushing the Dubbing demo into unreadable columns (#1683)
 - Dubbing keeps the source-language selector visible after a local file is chosen, so ASR can be pinned before transcription starts (#1678) — thanks @Lonki-lomki-cloud!
 - First-run media-engine downloads become available to TTS immediately without a restart, and missing media-process failures now point to repair controls (#1677) — thanks @farhataligpt-dev!
-- Source installs on AMD GPUs honour `OMNIVOICE_TORCH_VARIANT=rocm`: `bun run desktop` now swaps in the ROCm torch wheel after `uv sync` and launches the backend without re-syncing, instead of silently reverting to the CPU-only CUDA build on every start (#1665) — thanks @uberclokr!
-- `bun run desktop` on a fresh clone no longer fails with "resource path `../../frontend/dist` doesn't exist" — the dev launcher creates the placeholder Tauri resource directory before compiling (#1664) — thanks @uberclokr!
+- AMD source installs now keep a ROCm torch build when `OMNIVOICE_TORCH_VARIANT=rocm` is set (#1665) — thanks @uberclokr!
+- The dev launcher no longer fails on a fresh clone because of a missing placeholder resource directory (#1664) — thanks @uberclokr!
 - macOS no longer loses TTS after the first request when Python lacks `os.waitid`; subprocess ownership now uses a safe `waitpid` fallback without risking reused process groups (#1656) — thanks @paoloantinori!
 - Desktop startup, Retry, reset, uninstall, shutdown, and crash recovery now share one backend lifecycle owner; quitting interrupts first-run installers and gracefully drains then force-cleans the full backend process tree, so overlaps cannot duplicate or orphan it (#1635) — thanks @Xohaibxobi!
 - Large Stories and Audiobook projects now persist in IndexedDB instead of overflowing the `omnivoice.app` localStorage envelope, with quota-safe migration and orderly exit/reload flushing (#1636) — thanks @leodzai!
@@ -1866,7 +2153,7 @@ v0.5.3 is also the final Tauri update. The Tauri updater will not switch you to 
 - **Model Catalogue** — a workspace of its own for engines and models: browse every TTS, transcription and LLM engine with its device routing and install state, pick the default for each, and install or remove model weights, all from one screen instead of two Settings categories.
 - Remote GPU machines can now accept connections instead of dialling out, so several people can use the same box at once — each gets their own revocable connection string, with certificate-pinned TLS, a live list of who is connected, and a disconnect button. (#1496)
 - Remote GPU model downloads now use the normal Models install flow and show per-worker progress. (#1478)
-- Settings → System → **Remote workers** sends individual jobs to GPUs on your other machines while everything else stays here. Off by default; each machine is added with a single-use token and approved before any audio reaches it. See [docs/remote-workers.md](docs/remote-workers.md).
+- Settings → System → **Remote workers** sends individual jobs to GPUs on your other machines while everything else stays here. Off by default; each machine is added with a single-use token and approved before any audio reaches it.
 - First-run setup now recommends a screen-aware interface scale, with compact controls available throughout setup. (#1502)
 - OrcaRouter is now available as a named OpenAI-compatible LLM provider — thanks @Marc-oss-hub! (#1499)
 - IndexTTS 2.5 is available as a pinned one-click sidecar with five-language dubbing, expressive cloning, and backward-compatible IndexTTS-2 support. (#1482) — thanks @marwanlhabti5-coder!
@@ -1979,7 +2266,7 @@ v0.5.3 is also the final Tauri update. The Tauri updater will not switch you to 
 - A TLS connection cut during generation is explained as the dropped download it is, instead of falling through as an unrecognized error carrying `_ssl.c:1016`. (#1335)
 - Windows "paging file is too small" no longer suggests the Flush button, which cannot help. It now names the virtual-memory setting to change, and says plainly that it is not a network problem. (#1334)
 - A port conflict that resolves itself while the backend is dying no longer reports a bare "Backend died (exit code 1)" — the conflict is named even when the other process has already let the port go. (#1364, #1223)
-- Fresh installs failing to import `transformers.HiggsAudioV2TokenizerModel` with "RuntimeError: operator torchvision::nms does not exist" are fixed by pinning `torchvision==0.23.0` to match `torch 2.8.0` — thanks @HanzlahCh! (#1358, #1357)
+- Fresh installs now pin torchvision 0.23.0 alongside torch 2.8.0, preventing `transformers.HiggsAudioV2TokenizerModel` imports from failing on a missing `torchvision::nms` operator. (#1358, #1357) — thanks @HanzlahCh!
 - ...and that pin now actually reaches Colab and Docker: both install with `uv pip install`, which ignores the pyproject setting the pin lived in, so the torch trio could still drift apart. It is passed explicitly now. (#1357)
 - Every RTX 40-series card (4060–4090) was declared unsupported and silently run on the CPU. The compatibility gate demanded an exact `sm_89` match, but PyTorch ships `sm_86` kernels that already cover Ada. (#1285)
 - Under-provisioned hardware is now flagged **before** a synthesis starts instead of after the full compute budget expires. (#1240, #1246, #1248, #1277, #1283, #1284)
@@ -1988,8 +2275,8 @@ v0.5.3 is also the final Tauri update. The Tauri updater will not switch you to 
 - ffmpeg failures report the failure instead of ffmpeg's build configuration. (#1309)
 - A cut TLS connection is explained in words rather than as `_ssl.c:1016`. (#1301)
 - `torch.compile` is skipped when the torch library path contains a space, instead of failing in the linker on every load. (#1266)
+- macOS Preview updates no longer fail signature validation: the feed is rebuilt from release artifacts and every signature is verified (#1327) — thanks @Pinkers01!
 - macOS Preview updates work again — the updater bundle had been colliding with itself since early July. (#1281)
-- macOS Preview updates no longer fail signature verification — the preview manifest is rebuilt from the published assets and every signature in it is verified against the file it points at — thanks @Pinkers01! (#1327)
 - A dub whose transcription stream is cut by a reverse proxy now says so, instead of blaming the ASR model. (#1317)
 - The dev backend going quiet under `--reload` is named as auto-reload rather than reported as a crash. (#1261)
 - Building from source: `bun run desktop-prod:run`, documented as a re-launch, wiped the app's data every time — voice profiles, projects and outputs included. It now keeps them — thanks @Kakuzen93! (#1333)
@@ -2006,7 +2293,7 @@ v0.5.3 is also the final Tauri update. The Tauri updater will not switch you to 
 - Generation that silently dropped the end of the input now says so. When an engine returns no audio for part of the text the result sounds clean and is simply short, so the only way to notice was to read along; the backend log now names the sentences that produced nothing. (#1330)
 - Dubbing: a re-rendered line that quietly came back in a default voice instead of the cloned one now says why in the backend log — the clone clips are extracted per job and a saved dub outlives them, so regenerating after cleanup loses the reference with no error. (#1331)
 - RTX 40-series GPUs are used again instead of being sent to the CPU. (#1289)
-- Apple Silicon: transcription no longer needs a system ffmpeg, as the docs always said — thanks @gambletan! (#1436)
+- Apple Silicon: transcription no longer fails when ffmpeg isn't installed on the system, as the docs always promised — thanks @gambletan! (#1436)
 - A failed audiobook chapter says why, instead of turning red and saying nothing. (#1325)
 
 ### CI
@@ -2828,14 +3115,10 @@ across dub, generate, and design (a corrupt-binary failure no longer poses as
   surfaced as a 500 — even though the audio had already been generated and saved.
   The write now self-heals the schema and retries, and a history-logging failure
   never fails the generation: you get your audio regardless. (#710)
-- **Long-video dubs no longer spike RAM during assembly.** Dub generation used
-  to hold every segment's audio in memory until the whole track was mixed, so a
-  50-video batch or a single feature-length dub could exhaust RAM and crash. Each
-  segment now streams to disk as it's rendered and the final track is assembled
-  from those files via a 30s-chunk memmap writer, keeping memory flat regardless
-  of video length. Per-segment download WAVs and the final track stay correctly
-  watermarked (marked once at synthesis, no double-mark), and zero/negative-length
-  segments no longer crash the run. (#639)
+- **Long dubs no longer balloon memory while the track is assembled.**
+  Segments now stream to disk as they are rendered and are mixed in chunks,
+  watermarks are applied once, and zero or negative length segments are
+  handled cleanly. (#639)
 - **A corrupt or wrong-architecture native component no longer masquerades as
   "out of memory."** A synth failure caused by a bad `.dll`/`.pyd`/`.exe` on
   Windows (`[WinError 193] %1 is not a valid Win32 application` — e.g. torch,
@@ -3594,7 +3877,7 @@ kept for the qualitative "actually useful" release.)
 - **Microphone access prompt on macOS.** Added an `Info.plist` with `NSMicrophoneUsageDescription` (and `NSCameraUsageDescription` for forward-compat) so getUserMedia no longer fails silently on macOS 10.14+ TCC. Tauri's bundler auto-merges the file at bundle time. Mic-denial toasts now also include platform-specific recovery hints (Settings paths for macOS/Windows, audio-group check for Linux).
 
 ### Infrastructure
-- **uv bundled per-platform.** Release installers now ship the `uv` binary as a Tauri sidecar (`bundle.externalBin`). First launch no longer requires network access for the uv-download step — bootstrap uses the bundled binary directly. Adds ~12-15 MB per platform installer; falls back to PATH lookup, then standalone download, when the bundled file isn't present (dev builds, future targets). Pinned at `UV_VERSION = "0.11.7"`; bump the constant in [lib.rs](frontend/src-tauri/src/lib.rs) and the matching env var in [release.yml](.github/workflows/release.yml) together to refresh.
+- **uv bundled per-platform.** Release installers now ship the `uv` binary as a Tauri sidecar (`bundle.externalBin`). First launch no longer requires network access for the uv-download step — bootstrap uses the bundled binary directly. Adds ~12-15 MB per platform installer; falls back to PATH lookup, then standalone download, when the bundled file isn't present (dev builds, future targets). Pinned at `UV_VERSION = "0.11.7"`; bump the constant in `frontend/src-tauri/src/lib.rs` and the matching env var in `.github/workflows/release.yml` together to refresh.
 - **ffmpeg fetch removed from Tauri bootstrap.** The redundant download from `eugeneware/ffmpeg-static` (saved to `app_data/bin/`) was never used by the backend, which already resolves ffmpeg via `imageio_ffmpeg.get_ffmpeg_exe()` from the pip wheel pulled by `uv sync`. Net effect: one fewer first-run network round-trip, one fewer splash-screen stage, and the splash no longer shows the misleading "Downloading ffmpeg…" line.
 - **CI cross-platform check.** PRs now run `cargo check` against the Tauri shell on macOS (Apple Silicon), Windows, and Linux in parallel — surfaces platform-specific Rust regressions before tag push without paying the full ~15 min/platform tauri-bundle cost (full bundling stays in `release.yml` on tag push).
 - **Release notes from CHANGELOG.** `release.yml` now extracts the matching `## [X.Y.Z]` section from `CHANGELOG.md` and uses it as the GitHub Release body, replacing the prior placeholder "Auto-generated release. See commit log for changes."

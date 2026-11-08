@@ -71,35 +71,38 @@ def _seed_previous_install(cache):
 
 
 def _patch_install(download, monkeypatch, snapshot_download=None):
-    import huggingface_hub
+    """Stub everything around the transfer so an install goes straight to it."""
     from services import hf_revisions, performance_profiles
 
-    monkeypatch.setattr(download, "revision_for", lambda _repo: COMMIT)
-    monkeypatch.setattr(download, "disk_space_error", lambda *_a, **_k: None)
-    monkeypatch.setattr(download, "_segmented_enabled", lambda: False)
-    monkeypatch.setattr(hf_revisions, "remember_revision", lambda *_a: None)
-    monkeypatch.setattr(performance_profiles, "reconcile_active_profile", lambda: None)
+    monkeypatch.setattr(download, "revision_for", lambda *a, **k: COMMIT)
+    monkeypatch.setattr(download, "disk_space_error", lambda *a, **k: None)
+    monkeypatch.setattr(download, "_segmented_enabled", lambda *a, **k: False)
+    monkeypatch.setattr(hf_revisions, "remember_revision", lambda *a, **k: None)
+    monkeypatch.setattr(performance_profiles, "reconcile_active_profile", lambda *a, **k: None)
     if snapshot_download is not None:
+        import huggingface_hub
+
         monkeypatch.setattr(huggingface_hub, "snapshot_download", snapshot_download)
 
 
 def _run_install(download):
     from utils import hf_progress
 
-    events: list[dict] = []
+    events = []
     listener = hf_progress.register_listener(events.append)
 
-    async def _run():
+    async def install_and_drain():
         await download.install_model(download.InstallModelRequest(repo_id=REPO))
-        pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+        current = asyncio.current_task()
+        pending = [task for task in asyncio.all_tasks() if task is not current and not task.done()]
         if pending:
             await asyncio.gather(*pending)
 
     try:
-        asyncio.run(_run())
+        asyncio.run(install_and_drain())
     finally:
         hf_progress.unregister_listener(listener)
-    return [e.get("phase") for e in events if e.get("repo_id") == REPO]
+    return [event["phase"] for event in events if event.get("repo_id") == REPO]
 
 
 def _cancel(download):
@@ -170,7 +173,7 @@ def test_cancel_stops_an_in_flight_snapshot_download_and_cleans_up(
     assert sorted(p.name for p in (repo / "blobs").iterdir()) == ["oldblob"]
     assert sorted(p.name for p in (repo / "snapshots").iterdir()) == [OLD_COMMIT]
     assert (repo / "snapshots" / OLD_COMMIT / "model.safetensors").read_bytes() == b"old weights"
-    assert (repo / "refs" / "main").read_text() == OLD_COMMIT
+    assert (repo / "refs" / "main").read_text(encoding="utf-8") == OLD_COMMIT
     assert not (cache / ".locks" / FOLDER).exists()
     other = cache / "models--someone--other" / "blobs"
     assert sorted(p.name for p in other.iterdir()) == ["busy.incomplete", "keep"]
@@ -314,8 +317,8 @@ def test_rollback_removes_only_what_the_download_added(tmp_path):
     assert sorted(p.name for p in (repo / "snapshots" / OLD_COMMIT).iterdir()) == [
         "model.safetensors"
     ]
-    assert (repo / "refs" / "main").read_text() == OLD_COMMIT
-    assert (repo / "voicestudio-revision").read_text() == OLD_COMMIT + "\n"
+    assert (repo / "refs" / "main").read_text(encoding="utf-8") == OLD_COMMIT
+    assert (repo / "voicestudio-revision").read_text(encoding="utf-8") == OLD_COMMIT + "\n"
     assert (tmp_path / "models--someone--other" / "blobs" / "busy.incomplete").exists()
 
 

@@ -40,6 +40,7 @@ beforeEach(() => {
   delete backendStatus.message;
   delete backendStatus.diagnosis;
   delete backendStatus.setupIssue;
+  backendStatus.setupRequiredGib = 9;
   delete backendStatus.runtimeFreeGib;
   delete backendStatus.setupPhase;
   delete backendStatus.setupProgress;
@@ -118,6 +119,69 @@ it('shows package installation after the last large download instead of a stale 
   expect(screen.getByText(i18n.t('bootstrap.downloads_complete'))).toBeInTheDocument();
   expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
   expect(screen.queryByText('Downloaded scipy')).not.toBeInTheDocument();
+});
+
+it('lists install steps with the active package on the current step and the log in the card', async () => {
+  const restart = vi.fn().mockResolvedValue(undefined);
+  bridgeStub.current = { backend: { restart } };
+  backendStatus.stage = 'installing';
+  backendStatus.setupPhase = 'installing_deps';
+  backendStatus.logTail = ['Downloading torch (848.0MiB)'];
+  backendStatus.setupProgress = {
+    completedDownloads: 3,
+    downloadedBytes: 1024 ** 3,
+    totalBytes: 4 * 1024 ** 3,
+    activePackage: 'nvidia-cudnn-cu12',
+  };
+
+  render(
+    <BackendGate>
+      <div>workspace</div>
+    </BackendGate>,
+  );
+
+  const steps = screen.getAllByRole('listitem');
+  expect(steps).toHaveLength(4);
+  expect(steps[2]).toHaveAttribute('aria-current', 'step');
+  expect(steps[2]).toHaveTextContent('nvidia-cudnn-cu12');
+  // Settled steps drop the running ellipsis; the current one keeps it.
+  expect(steps[0].textContent).toBe(i18n.t('bootstrap.checking').replace(/…$/, ''));
+  expect(steps[2]).toHaveTextContent(i18n.t('bootstrap.installing_deps'));
+  expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '25');
+  expect(screen.getByText(i18n.t('backend.first_run_hint'))).toBeVisible();
+
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('backend.details') }));
+  expect(screen.getByLabelText(i18n.t('backend.log_label'))).toHaveTextContent('Downloading torch');
+  expect(screen.getAllByRole('button', { name: i18n.t('backend.details') })).toHaveLength(1);
+
+  const cancel = screen.getByRole('button', { name: i18n.t('common.cancel') });
+  fireEvent.click(cancel);
+  await waitFor(() => expect(cancel).toBeDisabled());
+  fireEvent.click(cancel);
+  expect(restart).toHaveBeenCalledTimes(1);
+});
+
+it('keeps the download bar live when a new download follows a prepared batch', () => {
+  backendStatus.stage = 'installing';
+  backendStatus.setupPhase = 'installing_deps';
+  backendStatus.setupProgress = {
+    preparedPackages: 120,
+    completedDownloads: 3,
+    downloadedBytes: 1024 ** 3,
+    totalBytes: 2 * 1024 ** 3,
+    downloadsComplete: false,
+    activePackage: 'torch',
+  };
+
+  render(
+    <BackendGate>
+      <div>workspace</div>
+    </BackendGate>,
+  );
+
+  expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50');
+  expect(screen.getByText('torch')).toBeInTheDocument();
+  expect(screen.queryByText(i18n.t('bootstrap.downloads_complete'))).not.toBeInTheDocument();
 });
 
 // #2430 — a live-but-busy backend is not a failure.
@@ -248,13 +312,14 @@ it('explains unsupported Windows proxy bypass rules before retrying setup', () =
   );
 });
 
-const RELEASES_URL = 'https://github.com/debpalash/VoiceStudio/releases/latest';
-it('sends Apple Silicon users on the Intel build to the arm64 download (#2598)', () => {
+const LATEST_RELEASE_URL = 'https://github.com/debpalash/VoiceStudio/releases/latest';
+
+it('sends Apple Silicon users running the Intel build to the arm64 download (#2598)', () => {
   backendStatus.setupIssue = 'wrong_architecture';
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
   render(
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
+    <QueryClientProvider client={client}>
       <BackendGate>
         <div>workspace</div>
       </BackendGate>
@@ -263,18 +328,14 @@ it('sends Apple Silicon users on the Intel build to the arm64 download (#2598)',
 
   expect(screen.getByText(i18n.t('backend.setup_wrong_architecture'))).toBeVisible();
   expect(
-    screen.getByRole('link', {
-      name: i18n.t('backend.download_apple_silicon'),
-    }),
-  ).toHaveAttribute('href', RELEASES_URL);
+    screen.getByRole('link', { name: i18n.t('backend.download_apple_silicon') }),
+  ).toHaveAttribute('href', LATEST_RELEASE_URL);
   expect(
     screen.queryByRole('button', { name: i18n.t('backend.setup_required') }),
   ).not.toBeInTheDocument();
   expect(screen.queryByText(i18n.t('backend.setup_unsupported_platform'))).not.toBeInTheDocument();
   expect(
-    screen.getByRole('textbox', {
-      name: i18n.t('settings.remote_backend_url'),
-    }),
+    screen.getByRole('textbox', { name: i18n.t('settings.remote_backend_url') }),
   ).toBeVisible();
 });
 
@@ -310,27 +371,18 @@ it('shows a populated, usable reconnect form for an expired remote session while
   }
 });
 
-it('offers a remote backend instead of a doomed local install on Intel Macs', () => {
+it('replaces Intel-Mac installation controls with the connection editor', () => {
   backendStatus.setupIssue = 'unsupported_platform';
-  render(
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
-      <BackendGate>
-        <div>workspace</div>
-      </BackendGate>
-    </QueryClientProvider>,
-  );
+  renderGate('setup_required');
 
-  expect(screen.getByText(i18n.t('backend.setup_unsupported_platform'))).toBeVisible();
+  const remoteAddress = screen.getByRole('textbox', {
+    name: i18n.t('settings.remote_backend_url'),
+  });
+  expect(remoteAddress).toBeVisible();
+  expect(screen.getByText(i18n.t('backend.setup_unsupported_platform'))).toBeInTheDocument();
   expect(
     screen.queryByRole('button', { name: i18n.t('backend.setup_required') }),
   ).not.toBeInTheDocument();
-  expect(
-    screen.getByRole('textbox', {
-      name: i18n.t('settings.remote_backend_url'),
-    }),
-  ).toBeVisible();
 });
 
 it.each([
@@ -350,8 +402,8 @@ it.each([
     renderGate('failed');
 
     // The raw message moves under Details once a cause is named.
-  fireEvent.click(screen.getByRole('button', { name: i18n.t('backend.details') }));
-  expect(screen.getByLabelText(i18n.t('backend.log_label'))).toHaveTextContent(message);
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('backend.details') }));
+    expect(screen.getByLabelText(i18n.t('backend.log_label'))).toHaveTextContent(message);
     expect(screen.getByTestId('backend-hint')).toHaveTextContent(i18n.t(key));
   },
 );
@@ -395,6 +447,29 @@ it('names a native crash and makes Copy diagnostics the primary action', () => {
   expect(screen.getByRole('button', { name: i18n.t('backend.retry') })).toBeEnabled();
 });
 
+it('explains an externally killed backend (exit code 4294967295) on the live screen', () => {
+  backendStatus.message = 'Backend exited unexpectedly (exit code 4294967295).';
+
+  renderGate('crashed');
+
+  expect(screen.getByTestId('backend-cause')).toHaveTextContent(
+    i18n.t('backend.cause_external_kill'),
+  );
+  expect(screen.getByTestId('backend-hint')).toHaveTextContent(
+    i18n.t('backend.hint_external_kill'),
+  );
+  expect(screen.getByRole('button', { name: i18n.t('backend.retry') })).toBeEnabled();
+});
+
+it('does not call a traceback exit an external kill', () => {
+  backendStatus.message =
+    'Backend exited unexpectedly (exit code -1).\nTraceback (most recent call last):\n  File "a.py"\nValueError: x';
+
+  renderGate('crashed');
+
+  expect(screen.queryByTestId('backend-cause')).not.toBeInTheDocument();
+});
+
 it('offers Choose another folder for a missing Python environment', async () => {
   const chooseRuntimeLocation = vi.fn().mockResolvedValue({ path: 'D:\\vs' });
   const restart = vi.fn().mockResolvedValue(undefined);
@@ -411,12 +486,78 @@ it('offers Choose another folder for a missing Python environment', async () => 
   expect(chooseRuntimeLocation).toHaveBeenCalled();
 });
 
+it('gives a source checkout Retry, not a folder picker it cannot use (#3480)', () => {
+  const runtimePath = backendStatus.runtimePath;
+  delete backendStatus.runtimePath;
+  try {
+    backendStatus.message =
+      "The Python environment in C:\\Users\\me\\VoiceStudio is incomplete: ModuleNotFoundError: No module named 'fastapi'.";
+
+    renderGate('failed');
+
+    expect(screen.getByTestId('backend-cause')).toHaveTextContent(
+      i18n.t('backend.cause_missing_env'),
+    );
+    expect(
+      screen.queryByRole('button', { name: i18n.t('backend.choose_folder') }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: i18n.t('backend.retry') })).toBeEnabled();
+  } finally {
+    backendStatus.runtimePath = runtimePath;
+  }
+});
+
 it('names no cause for an unrecognised failure', () => {
   backendStatus.message = 'Backend exited unexpectedly (exit code 1).';
 
   renderGate('failed');
 
   expect(screen.queryByTestId('backend-cause')).not.toBeInTheDocument();
+});
+
+it('leads with the fix for a coded failure and keeps Report available', () => {
+  backendStatus.message = 'Could not start C:\\rt\\python.exe: spawn UNKNOWN';
+  backendStatus.failure = {
+    code: 'WINDOWS_APP_CONTROL_BLOCKED',
+    stage: 'failed',
+    smartAppControl: 'on',
+  };
+
+  renderGate('failed');
+
+  expect(screen.getByTestId('backend-cause')).toHaveTextContent(i18n.t('backend.cause_smart_app_control'));
+  expect(
+    screen.getAllByTestId('backend-hint').map((hint) => hint.textContent),
+  ).not.toContain(i18n.t('backend.hint_spawn_blocked'));
+  expect(screen.getByTestId('backend-failure-code')).toHaveTextContent(
+    'WINDOWS_APP_CONTROL_BLOCKED',
+  );
+  expect(screen.getByRole('button', { name: i18n.t('reportBug.label') })).toBeInTheDocument();
+  delete backendStatus.failure;
+});
+
+it('warns about Smart App Control before the download without blocking install', () => {
+  backendStatus.smartAppControlWarning = true;
+  backendStatus.message = undefined;
+
+  renderGate('setup_required');
+
+  expect(screen.getByTestId('setup-smart-app-control')).toHaveTextContent(
+    i18n.t('backend.setup_smart_app_control'),
+  );
+  expect(screen.getByRole('button', { name: i18n.t('common.resume') })).toBeEnabled();
+  delete backendStatus.smartAppControlWarning;
+});
+
+it('shows download guidance on a failed setup', () => {
+  backendStatus.message = 'Runtime setup exited with code 1';
+  backendStatus.failure = { code: 'RUNTIME_DOWNLOAD_INTERRUPTED', stage: 'setup_required' };
+
+  renderGate('setup_required');
+
+  expect(screen.getByTestId('backend-cause')).toHaveTextContent(i18n.t('backend.cause_download'));
+  expect(screen.getByTestId('backend-hint')).toHaveTextContent(i18n.t('backend.hint_download'));
+  delete backendStatus.failure;
 });
 
 it('shows one status pill with the stage and elapsed time while starting', () => {
@@ -448,9 +589,21 @@ it('collapses repeated identical failures into one pill counter', () => {
   expect(screen.getByTestId('backend-status-pill')).not.toHaveTextContent(/2/);
 
   backendStatus.stage = 'starting';
-  view.rerender(<QueryClientProvider client={new QueryClient()}><BackendGate><div>workspace</div></BackendGate></QueryClientProvider>);
+  view.rerender(
+    <QueryClientProvider client={new QueryClient()}>
+      <BackendGate>
+        <div>workspace</div>
+      </BackendGate>
+    </QueryClientProvider>,
+  );
   backendStatus.stage = 'failed';
-  view.rerender(<QueryClientProvider client={new QueryClient()}><BackendGate><div>workspace</div></BackendGate></QueryClientProvider>);
+  view.rerender(
+    <QueryClientProvider client={new QueryClient()}>
+      <BackendGate>
+        <div>workspace</div>
+      </BackendGate>
+    </QueryClientProvider>,
+  );
 
   expect(screen.getByTestId('backend-status-pill')).toHaveTextContent(
     i18n.t('backend.pill_repeats', { count: 2 }),
@@ -462,7 +615,9 @@ it('shows a non-blocking offline bar while a live engine is busy', () => {
 
   renderGate('unresponsive');
 
-  expect(screen.getByTestId('backend-offline-bar')).toHaveTextContent(i18n.t('backend.offline_bar'));
+  expect(screen.getByTestId('backend-offline-bar')).toHaveTextContent(
+    i18n.t('backend.offline_bar'),
+  );
   expect(screen.queryByTestId('backend-gate-scroll')).not.toBeInTheDocument();
 });
 
@@ -482,4 +637,81 @@ it('forgets that diagnostics were copied once the failure changes', async () => 
     </QueryClientProvider>,
   );
   expect(screen.getByRole('button', { name: i18n.t('backend.copy_diagnostics') })).toBeEnabled();
+});
+
+it('explains a stuck install and holds back setup actions until it stops', () => {
+  backendStatus.message = 'Could not stop the running download.';
+  backendStatus.setupIssue = 'install_stuck';
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  render(
+    <QueryClientProvider client={client}>
+      <BackendGate>
+        <div>workspace</div>
+      </BackendGate>
+    </QueryClientProvider>,
+  );
+
+  expect(screen.getByText(i18n.t('backend.setup_install_stuck'))).toBeVisible();
+  expect(screen.getByRole('button', { name: i18n.t('common.resume') })).toBeDisabled();
+  expect(screen.getByRole('button', { name: i18n.t('bootstrap.clean_retry') })).toBeDisabled();
+  expect(screen.getByRole('button', { name: /^Change/ })).toBeDisabled();
+});
+
+it('explains that the app is installed but runtime and chosen models are separate', () => {
+  renderGate('setup_required');
+  expect(screen.getByText(/The app is installed/)).toHaveTextContent(
+    'The app is installed. Set up the local runtime next: download Python and AI libraries (several GB). Voice models are downloaded separately when you choose them.',
+  );
+});
+
+it('offers the existing server editor before installing a local runtime without starting setup', async () => {
+  const setupRuntime = vi.fn();
+  const testRemote = vi.fn().mockResolvedValue({ ok: true, detail: 'VoiceStudio' });
+  bridgeStub.current = {
+    backend: {
+      getConnection: vi.fn().mockResolvedValue({ remote: false }),
+      testRemote,
+      setupRuntime,
+    },
+  };
+  renderGate('setup_required');
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('settings.remote_backend_title') }));
+  const input = await screen.findByRole('textbox', { name: i18n.t('settings.remote_backend_url') });
+  expect(testRemote).not.toHaveBeenCalled();
+  expect(setupRuntime).not.toHaveBeenCalled();
+  fireEvent.change(input, { target: { value: 'http://localhost:4900' } });
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('settings.remote_backend_test') }));
+  await waitFor(() =>
+    expect(testRemote).toHaveBeenCalledWith({ url: 'http://localhost:4900', apiKey: '' }),
+  );
+  expect(setupRuntime).not.toHaveBeenCalled();
+});
+
+it.each([5, 9])('uses the main-process %s GiB preflight requirement before setup', (needed) => {
+  backendStatus.setupRequiredGib = needed;
+  backendStatus.runtimeFreeGib = 6;
+  renderGate('setup_required');
+  expect(screen.getByTestId('setup-free-space')).toHaveTextContent(
+    i18n.t('firstrun.free_space', { free: 6, needed }),
+  );
+  expect(screen.getByTestId('setup-free-space').classList.contains('text-warning')).toBe(
+    needed > 6,
+  );
+});
+
+it('does not invent a disk requirement while main-process preflight is unavailable', () => {
+  backendStatus.runtimeFreeGib = 6;
+  delete backendStatus.setupRequiredGib;
+  renderGate('setup_required');
+  expect(screen.queryByTestId('setup-free-space')).not.toBeInTheDocument();
+});
+
+it('labels the binary disk preflight units as GiB and a minimum rather than a download estimate', () => {
+  backendStatus.setupRequiredGib = 5;
+  backendStatus.runtimeFreeGib = 6;
+  renderGate('setup_required');
+  expect(screen.getByTestId('setup-free-space')).toHaveTextContent(
+    '6 GiB free on this drive; at least 5 GiB needed for the runtime',
+  );
 });

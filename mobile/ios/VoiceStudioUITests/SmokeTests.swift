@@ -1,6 +1,13 @@
 import XCTest
 
 extension XCUIApplication {
+    /// Home remains in the hierarchy while the first-run sheet covers it.
+    @MainActor func declineConsent(timeout: TimeInterval = 10, file: StaticString = #filePath, line: UInt = #line) {
+        let no = buttons["consent.no"]
+        XCTAssertTrue(no.wait(for: \.isHittable, toEqual: true, timeout: timeout), file: file, line: line)
+        no.tap()
+        XCTAssertTrue(no.waitForNonExistence(timeout: 5), file: file, line: line)
+    }
     /// Native TabView can expose either a bottom tab bar or an adaptive side rail.
     @MainActor func tabButton(_ label: String) -> XCUIElement {
         let tab = tabBars.buttons[label]
@@ -13,6 +20,33 @@ extension XCUIApplication {
         }
         let symbols = ["Home": "house", "Voices": "person.wave.2", "Dub": "film", "Dictate": "mic", "Settings": "gearshape"]
         return buttons.matching(NSPredicate(format: "label == %@ AND identifier == %@", label, symbols[label] ?? label)).firstMatch
+    }
+    /// Scrolls until `element` sits wholly between the navigation bar and the tab bar.
+    /// Content scrolled under those translucent bars can still report `isHittable`,
+    /// and a tap there lands on the bar instead of the element. Once the element is on
+    /// screen it is nudged toward the visible band with slow, measured drags in whichever
+    /// direction it lies: a full-screen flick can carry a lazily-loaded card past the
+    /// band and out of the hierarchy, where it can no longer be found.
+    @MainActor func reveal(_ element: XCUIElement, swipingDown: Bool = false, attempts: Int = 8) {
+        for _ in 0..<attempts {
+            let bar = navigationBars.firstMatch, tab = tabBars.firstMatch
+            let top = bar.exists ? bar.frame.maxY : frame.minY
+            let bottom = tab.exists && tab.frame.height < frame.height / 3 ? tab.frame.minY : frame.maxY
+            guard element.exists, !element.frame.isEmpty else {
+                if swipingDown { swipeDown() } else { swipeUp() }
+                continue
+            }
+            let target = element.frame
+            if target.minY >= top - 0.5 && target.maxY <= bottom + 0.5 { return }
+            let band = bottom - top
+            // Positive moves content up (the element lies below the band), negative down.
+            let needed = target.maxY > bottom + 0.5 && target.height <= band ? target.maxY - bottom + 16 : target.minY - top - 16
+            let distance = max(-band * 0.6, min(band * 0.6, needed))
+            let origin = coordinate(withNormalizedOffset: .zero)
+            let start = origin.withOffset(CGVector(dx: frame.midX, dy: top + band / 2 + distance / 2))
+            let end = origin.withOffset(CGVector(dx: frame.midX, dy: top + band / 2 - distance / 2))
+            start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.3)
+        }
     }
     @MainActor func openSpeak() {
         tabButton("Home").tap()
@@ -47,14 +81,14 @@ final class SmokeTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-smoke", "--ui-phone-history", "-AppleLanguages", "(en)"]
         app.launch()
-        XCTAssertTrue(app.buttons["consent.no"].waitForExistence(timeout: 10))
-        app.buttons["consent.no"].tap()
+        app.declineConsent()
         app.openSpeak()
         let saved = app.staticTexts["Saved audio for deletion review"]
         XCTAssertTrue(saved.waitForExistence(timeout: 5))
         let delete = app.buttons["Delete"]
+        let primaryAction = app.buttons["speak.generate"].exists ? app.buttons["speak.generate"] : app.buttons["models.get"]
         for _ in 0..<8 {
-            if delete.isHittable && delete.frame.maxY < app.buttons["speak.generate"].frame.minY { break }
+            if delete.isHittable && delete.frame.maxY < primaryAction.frame.minY { break }
             app.swipeUp()
         }
         XCTAssertTrue(delete.isHittable)
@@ -69,8 +103,7 @@ final class SmokeTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-smoke", "-AppleLanguages", "(en)"]
         app.launch()
-        XCTAssertTrue(app.buttons["consent.no"].waitForExistence(timeout: 10))
-        app.buttons["consent.no"].tap()
+        app.declineConsent()
         app.openSpeak()
         XCTAssertTrue(app.textViews["speak.text"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["models.open"].exists)
@@ -203,8 +236,7 @@ final class SmokeTests: XCTestCase {
     }
 
     @MainActor private func connect(_ app: XCUIApplication) {
-        XCTAssertTrue(app.buttons["consent.no"].waitForExistence(timeout: 10))
-        app.buttons["consent.no"].tap()
+        app.declineConsent()
         app.tabButton("Settings").tap()
         app.buttons["settings.connect"].tap()
         app.buttons["Enter address"].tap()
@@ -221,8 +253,7 @@ final class SmokeTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-smoke", "-AppleLanguages", "(en)"]
         app.launch()
-        XCTAssertTrue(app.buttons["consent.no"].waitForExistence(timeout: 10))
-        app.buttons["consent.no"].tap()
+        app.declineConsent()
         XCTAssertTrue(app.tabButton("Home").exists)
         app.tabButton("Settings").tap()
         app.buttons["settings.connect"].tap()
@@ -287,8 +318,7 @@ final class SmokeTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-smoke", "-AppleLanguages", "(en)"]
         app.launch()
-        XCTAssertTrue(app.buttons["consent.no"].waitForExistence(timeout: 10))
-        app.buttons["consent.no"].tap()
+        app.declineConsent()
         app.tabButton("Settings").tap()
         app.buttons["settings.connect"].tap()
         app.buttons["Enter address"].tap()
@@ -347,15 +377,22 @@ final class SmokeTests: XCTestCase {
     }
 
     @MainActor private func dismissUsingDone(_ app: XCUIApplication) {
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        // A visible keyboard is the negative control for the dismissal assertion.
+        XCTAssertTrue(app.keyboards.firstMatch.wait(for: \.isHittable, toEqual: true, timeout: keyboardWait))
         let done = app.buttons["keyboard.done"]
-        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        XCTAssertTrue(done.wait(for: \.isHittable, toEqual: true, timeout: keyboardWait))
         done.tap()
         assertKeyboardDismissed(app)
     }
 
     @MainActor private func assertKeyboardDismissed(_ app: XCUIApplication) {
-        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.keyboards.firstMatch)
-        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 5), .completed)
+        // iOS may retain an accessibility keyboard container after it is visually hidden.
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false OR hittable == false"), object: app.keyboards.firstMatch)
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: keyboardWait), .completed)
     }
+
+    /// One keyboard query on a loaded CI simulator can take over 4 s, so a 5 s budget
+    /// timed out after a single check while the keyboard was already gone. The waits
+    /// return as soon as the condition holds, so a longer budget costs nothing.
+    private let keyboardWait: TimeInterval = 20
 }

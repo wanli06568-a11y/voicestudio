@@ -6,6 +6,7 @@ import { engineFamilyState, useEngines } from '@/hooks/use-engines';
 import { describeError } from '@/lib/api/client';
 import type { EngineBackend, EngineFamilyState } from '@/lib/api/types';
 import { EngineInstall } from '../engine-install';
+import { AUDIOCPP_TTS_ENGINES, AudioCppRuntimeInstall } from '../audiocpp-runtime-install';
 import { EngineLicense, licensedEngine } from '../engine-license';
 import { EngineHealth } from '../engine-health';
 import { ModelLicense } from '../model-license';
@@ -30,6 +31,9 @@ import { EngineDetails, ModelCount } from './engine-details';
 import { FamilyList } from './family-list';
 import type { FamilyItem } from './family-row';
 import { useEngineSelect } from './use-engine-select';
+import { GGUF_ENGINE, GgufQuantPicker } from './gguf-quant-picker';
+import { asrSetupHint, engineUnavailableReason } from './engine-guidance';
+import { LocalModelPath } from './local-model-path';
 
 type Family = 'tts' | 'asr';
 
@@ -58,7 +62,13 @@ function modelChoice(ctx: Context, engine: EngineBackend, model: CatalogueModel)
 function engineSummary(ctx: Context, engine: EngineBackend, active: boolean) {
   if (engine.local_install_required && !engine.available)
     return ctx.t('engines.localInstallRequired');
-  if (!engine.available) return engine.reason || engine.install_hint || engine.hint || undefined;
+  if (!engine.available)
+    return (
+      engineUnavailableReason(engine.reason, ctx.t) ||
+      (ctx.family === 'asr' ? asrSetupHint(engine, ctx.t) : engine.install_hint) ||
+      engine.hint ||
+      undefined
+    );
   if (active && ctx.state.active_model) {
     const model = ctx.models.find(
       (item) =>
@@ -85,25 +95,41 @@ function engineItem(ctx: Context, engine: EngineBackend): FamilyItem {
       onSelect={() => void select.select(engine.id)}
     />
   ) : null;
-  const setup: ReactNode = engine.available ? null : licenseId ? (
+  const setup: ReactNode = engine.available ? (
+    engine.one_click_install ? (
+      <EngineInstall id={engine.id} repairOnly />
+    ) : null
+  ) : licenseId ? (
     <EngineLicense id={licenseId} name={engine.display_name} />
   ) : engine.one_click_install ? (
     <EngineInstall id={engine.id} />
+  ) : AUDIOCPP_TTS_ENGINES.has(engine.id) ? (
+    <AudioCppRuntimeInstall />
   ) : null;
   const singleInfo = single ? describeJob(single, ops) : undefined;
   const fallbackNote =
     engine.available && engine.routing_status === 'cpu_fallback' ? engine.routing_reason : null;
+  const setupHint =
+    !engine.local_install_required && !engine.setup_snippet && !engine.docs_url
+      ? ctx.family === 'asr'
+        ? asrSetupHint(engine, t)
+        : engine.install_hint
+      : undefined;
   const details = (
     <EngineDetails
-      detail={engine.available ? fallbackNote : engineSummary(ctx, engine, active)}
+      detail={engine.available ? fallbackNote : setupHint || engineSummary(ctx, engine, active)}
       snippet={engine.available ? null : engine.setup_snippet}
       docsUrl={engine.docs_url}
       tools={
-        <EngineHealth
-          id={engine.id}
-          available={engine.available}
-          isolationMode={engine.isolation_mode}
-        />
+        <>
+          {engine.id === GGUF_ENGINE && engine.available && <GgufQuantPicker />}
+          <LocalModelPath family={ctx.family} engineId={engine.id} />
+          <EngineHealth
+            id={engine.id}
+            available={engine.available}
+            isolationMode={engine.isolation_mode}
+          />
+        </>
       }
     />
   );
@@ -148,10 +174,11 @@ function engineItem(ctx: Context, engine: EngineBackend): FamilyItem {
             label={single.label}
             info={single.license_info}
             acceptance={single.license_acceptance}
+            dependencies={single.license_dependencies}
           />
         )}
         {!engine.available && (
-          <StatusBadge tone="muted" title={engine.reason || undefined}>
+          <StatusBadge tone="muted" title={engineUnavailableReason(engine.reason, t) || undefined}>
             {t('modelSettings.unavailable')}
           </StatusBadge>
         )}
@@ -167,7 +194,11 @@ function engineItem(ctx: Context, engine: EngineBackend): FamilyItem {
         )}
         <DeviceChip
           device={engine.effective_device}
-          title={engine.routing_reason || engine.routing_status}
+          title={
+            engine.routing_status === 'unknown'
+              ? t('common.unknown')
+              : engine.routing_reason || engine.routing_status
+          }
         />
       </>
     ),

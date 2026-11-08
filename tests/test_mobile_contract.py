@@ -10,6 +10,7 @@ import copy
 import hashlib
 import io
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -37,13 +38,28 @@ def test_openapi_operation_ids_are_unique():
     assert len(ids) == len(set(ids))
 
 
+def _bun() -> str | None:
+    """Full path to bun, as found on PATH (honouring PATHEXT on Windows).
+
+    Spawn this, never a bare "bun": an npm-installed bun on Windows is only
+    `bun.cmd`/`bun.ps1`, which `shutil.which` finds but CreateProcess does not.
+    """
+    return shutil.which("bun")
+
+
 def _electron_deps_installed() -> bool:
-    if shutil.which("bun") is None:
+    # Runs at collection (skipif), so it must never raise: one failed spawn
+    # here would abort the whole pytest run instead of skipping one test.
+    bun = _bun()
+    if bun is None:
         return False
-    probe = subprocess.run(
-        ["bun", "--no-install", "-e", "Bun.resolveSync('tailwindcss/theme.css', process.argv[1])", str(ROOT / "electron")],
-        capture_output=True, timeout=60,
-    )
+    try:
+        probe = subprocess.run(
+            [bun, "--no-install", "-e", "Bun.resolveSync('tailwindcss/theme.css', process.argv[1])", str(ROOT / "electron")],
+            capture_output=True, timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
     return probe.returncode == 0
 
 
@@ -52,10 +68,34 @@ def _electron_deps_installed() -> bool:
 @pytest.mark.skipif(not _electron_deps_installed(), reason="needs bun and installed Electron deps")
 def test_mobile_tokens_match_electron_theme():
     result = subprocess.run(
-        ["bun", "--no-install", "scripts/export-mobile-tokens.ts", "--check"],
+        [_bun(), "--no-install", "scripts/export-mobile-tokens.ts", "--check"],
         cwd=ROOT, capture_output=True, text=True, timeout=120,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_bun_probe_spawns_resolved_path_and_never_raises(monkeypatch):
+    shim = r"C:\npm\bun.CMD"
+    monkeypatch.setattr(shutil, "which", lambda name: shim if name == "bun" else None)
+    spawned = []
+
+    def fake_run(argv, **_kwargs):
+        spawned.append(argv[0])
+        raise FileNotFoundError(argv[0])
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert _electron_deps_installed() is False
+    assert spawned == [shim]
+
+
+def test_tests_never_spawn_bare_bun():
+    bare = [
+        f"{path.relative_to(ROOT)}:{number}"
+        for path in (ROOT / "tests").rglob("*.py")
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if re.search(r"subprocess\.\w+\(\s*\[\s*[\"']bun[\"']", line)
+    ]
+    assert not bare, f"spawn the shutil.which('bun') path instead of a bare 'bun': {bare}"
 
 
 def test_mobile_string_keys_are_namespaced():
@@ -114,7 +154,7 @@ def test_mobile_models_are_pinned_and_have_complete_manifests():
     assert len(ids) == len(set(ids))
     assert {model["capability"] for model in catalogue["models"]} == set(mobile_models.CAPABILITIES)
     for model in catalogue["models"]:
-        assert model["runtime"] == mobile_models.CAPABILITIES[model["capability"]]
+        assert model["runtime"] in mobile_models.RUNTIMES[model["capability"]]
         assert mobile_models.REVISION.fullmatch(model["revision"])
         assert model["total_bytes"] == sum(file["size"] for file in model["files"])
         for file in model["files"]:
@@ -143,13 +183,15 @@ def test_mobile_models_registry_licence_gates_and_fingerprints():
         assert licence["terms"] == model_acceptance.terms(info, model["repo"])
         assert licence["credit"] and licence["rights_holder"] and licence["id"]
     omni = next(model for model in catalogue["models"] if model["capability"] == "clone")
-    desktop = json.loads((ROOT / "backend/engines/omnivoice_gguf/quant_map.json").read_text())["_meta"]
+    desktop = json.loads((ROOT / "backend/engines/omnivoice_gguf/quant_map.json").read_text(encoding="utf-8"))["_meta"]
     assert (omni["repo"], omni["revision"]) == (desktop["source_model"], desktop["source_commit_sha"])
     assert omni["licence"]["category"] == "non-commercial"
     assert omni["licence"]["requires_acceptance"] is True
     assert {file["path"] for file in omni["files"]} == {
-        "omnivoice-base-Q4_K_M.gguf", "omnivoice-tokenizer-Q4_K_M.gguf",
+        "omnivoice-base-Q8_0.gguf", "omnivoice-tokenizer-F32.gguf",
     }
+    assert omni["min_ram_gb"] >= 8
+    assert omni["config"]["requires_reference_audio"] is True
     translation = next(model for model in catalogue["models"] if model["capability"] == "translate")
     assert translation["total_bytes"] <= 1_200_000_000
     assert translation["licence"]["category"] == "commercial-ok"
@@ -269,7 +311,7 @@ def test_mobile_models_check_command_detects_stale_output(monkeypatch, tmp_path,
     assert mobile_models.main() == 0
     monkeypatch.setattr(sys, "argv", ["export_mobile_models.py", "--check"])
     assert mobile_models.main() == 0
-    data = json.loads(output.read_text())
+    data = json.loads(output.read_text(encoding="utf-8"))
     data["models"][0]["total_bytes"] += 1
     output.write_text(json.dumps(data))
     assert mobile_models.main() == 1
@@ -279,7 +321,7 @@ def test_mobile_models_pin_retains_desktop_omnivoice_revision(monkeypatch):
     source = _mobile_models_source()
     source["models"] = [next(row for row in source["models"] if row["capability"] == "clone")]
     model = source["models"][0]
-    expected = json.loads((ROOT / "backend/engines/omnivoice_gguf/quant_map.json").read_text())["_meta"]
+    expected = json.loads((ROOT / "backend/engines/omnivoice_gguf/quant_map.json").read_text(encoding="utf-8"))["_meta"]
     requests = []
 
     def request(path):
@@ -383,9 +425,9 @@ def test_ios_home_contributors_match_electron_snapshot():
     """The iOS Home cluster mirrors Electron's bundled snapshot, avatars included (offline)."""
     import re
 
-    data = (ROOT / "electron/src/renderer/src/features/home/home-contributors-data.ts").read_text()
+    data = (ROOT / "electron/src/renderer/src/features/home/home-contributors-data.ts").read_text(encoding="utf-8")
     electron = re.findall(r"login: '([^']+)'", data)
-    swift = (ROOT / "mobile/ios/VoiceStudio/Features/HomeContributors.swift").read_text()
+    swift = (ROOT / "mobile/ios/VoiceStudio/Features/HomeContributors.swift").read_text(encoding="utf-8")
     ios = re.findall(r'"([^"]+)"', re.search(r"static let logins = \[(.*?)\]", swift, re.S).group(1))
     assert ios == electron
     core = re.findall(r"'([^']+)'", re.search(r"homeCoreMaintainers = \[(.*?)\]", data, re.S).group(1))
@@ -398,11 +440,11 @@ def test_ios_home_contributors_match_electron_snapshot():
 def test_android_home_contributors_match_electron_snapshot():
     import re
 
-    electron = re.findall(r"login: '([^']+)'", (ROOT / "electron/src/renderer/src/features/home/home-contributors-data.ts").read_text())
-    kotlin = (ROOT / "mobile/android/features/src/main/kotlin/com/voicestudio/mobile/features/HomeContributors.kt").read_text()
+    electron = re.findall(r"login: '([^']+)'", (ROOT / "electron/src/renderer/src/features/home/home-contributors-data.ts").read_text(encoding="utf-8"))
+    kotlin = (ROOT / "mobile/android/features/src/main/kotlin/com/voicestudio/mobile/features/HomeContributors.kt").read_text(encoding="utf-8")
     android = re.findall(r'"([^"]+)"', re.search(r"val logins = listOf\((.*?)\)", kotlin, re.S).group(1))
     assert android == electron
-    data = (ROOT / "electron/src/renderer/src/features/home/home-contributors-data.ts").read_text()
+    data = (ROOT / "electron/src/renderer/src/features/home/home-contributors-data.ts").read_text(encoding="utf-8")
     core = re.findall(r"'([^']+)'", re.search(r"homeCoreMaintainers = \[(.*?)\]", data, re.S).group(1))
     android_core = re.findall(r'"([^"]+)"', re.search(r"coreMaintainers = setOf\((.*?)\)", kotlin, re.S).group(1))
     assert set(android_core) == set(core) == {"debpalash", "velixio"}
@@ -410,12 +452,12 @@ def test_android_home_contributors_match_electron_snapshot():
         assert list((ROOT / "electron/src/renderer/src/features/home/contributors").glob(f"{login}.*"))
 
 
-@pytest.mark.skipif(shutil.which("bun") is None, reason="needs bun")
+@pytest.mark.skipif(_bun() is None, reason="needs bun")
 def test_mobile_voice_design_traits_match_electron():
-    result = subprocess.run(["bun", "scripts/export-mobile-design.ts", "--check"], cwd=ROOT, capture_output=True, text=True, timeout=60)
+    result = subprocess.run([_bun(), "scripts/export-mobile-design.ts", "--check"], cwd=ROOT, capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
-    catalogue = json.loads((CONTRACT / "design.json").read_text())
-    locales = [json.loads(path.read_text()) for path in (ROOT / "electron/src/renderer/src/i18n/locales").glob("*.json")]
+    catalogue = json.loads((CONTRACT / "design.json").read_text(encoding="utf-8"))
+    locales = [json.loads(path.read_text(encoding="utf-8")) for path in (ROOT / "electron/src/renderer/src/i18n/locales").glob("*.json")]
     for category in catalogue["categories"]:
         for key in [category["label"], *[option["label"] for option in category["options"]]]:
             for locale in locales:
@@ -423,3 +465,32 @@ def test_mobile_voice_design_traits_match_electron():
                 for part in key.split("."):
                     value = value[part]
                 assert isinstance(value, str) and value
+
+
+def test_speech_catalogue_offers_native_model_families_with_honest_reference_requirements():
+    models=json.loads((CONTRACT / "models.json").read_text(encoding="utf-8"))["models"]
+    families={m["config"].get("model_type"):m for m in models if m["capability"] in {"tts","clone"}}
+    assert {"kitten","kokoro","vits","supertonic","pocket","zipvoice"} <= families.keys()
+    for family in ("pocket","zipvoice"):
+        assert families[family]["config"]["reference_required"] is True
+        assert families[family]["config"]["supports_cloning"] is True
+        assert families[family]["config"]["num_speakers"] == 0
+
+
+@pytest.mark.parametrize("url,accepted", [
+    ("https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/vocos-24khz.onnx", True),
+    ("https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/nested/vocos.onnx", False),
+    ("https://github.com/k2-fsa/sherpa-onnx/releases/download/./vocos.onnx", False),
+    ("https://github.com/k2-fsa/sherpa-onnx/releases/download/../vocos.onnx", False),
+    ("https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/model%20name.onnx", False),
+    ("https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/model name.onnx", False),
+    ("https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/vocos.onnx?raw=1", False),
+    ("https://user@github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/vocos.onnx", False),
+    ("https://github.com:443/k2-fsa/sherpa-onnx/releases/download/v1.13.8/vocos.onnx", False),
+    ("https://github.com:invalid/k2-fsa/sherpa-onnx/releases/download/v1.13.8/vocos.onnx", False),
+    ("https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/vocos.onnx#fragment", False),
+    ("https://github.com/other/project/releases/download/v1/vocos.onnx", False),
+    ("http://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/vocos.onnx", False),
+])
+def test_mobile_release_asset_urls_match_native_boundaries(url, accepted):
+    assert mobile_models.valid_asset_url(url) is accepted

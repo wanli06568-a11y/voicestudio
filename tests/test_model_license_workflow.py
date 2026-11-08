@@ -197,7 +197,7 @@ class WorkflowTests(unittest.TestCase):
     def test_receipt_identity_corruption_rejected(self):
         p = self.prepare(); self.commit(p)
         path = self.service.store / "receipts" / f"{p['plan_digest']}.json"
-        original = json.loads(path.read_text())
+        original = json.loads(path.read_text(encoding="utf-8"))
         for field in ("repo_id", "registry_digest"):
             bad = copy.deepcopy(original); bad["receipt"][field] = "different"
             path.write_text(json.dumps(bad))
@@ -250,7 +250,7 @@ class WorkflowTests(unittest.TestCase):
         path = self.service.store / "receipts" / f"{p['plan_digest']}.json"
         path.write_text('{"schema_version": 99}')
         self.assert_code("receipt_invalid", self.commit, p)
-        self.assertEqual(path.read_text(), '{"schema_version": 99}')
+        self.assertEqual(path.read_text(encoding="utf-8"), '{"schema_version": 99}')
 
     def test_receipt_paths_reject_untrusted_names(self):
         for value in ("../outside", "/tmp/file", "a" * 63, "a" * 65,
@@ -358,7 +358,7 @@ class ProductionTests(unittest.TestCase):
 
     def test_production_rows_never_use_synthetic_positive_fixtures(self):
         registry = ml.load_registry()
-        self.assertEqual(len(registry["models"]), 64)
+        self.assertEqual(len(registry["models"]), 70)
         self.assertEqual(len(registry["dynamic_assets"]), 7)
         for row in registry["models"]:
             self.assertEqual(row["component_closure"], "incomplete")
@@ -381,11 +381,14 @@ class ProductionTests(unittest.TestCase):
         expected = {r["id"]: r["runtime_revision"] for r in data["models"]
                     if r["runtime_pin_scope"] == "central"}
         self.assertEqual(CURATED_REVISIONS, expected)
-        self.assertEqual(len(expected), 45)
+        self.assertEqual(len(expected), 46)
         self.assertEqual(expected.pop("OpenMOSS-Team/MOSS-Audio-Tokenizer"),
                          "3cd226ba2947efa357ef453bcad111b6eafba782")
         self.assertEqual(expected.pop("Lourdle/Fun-CosyVoice3-0.5B-2512-GGUF"),
                          "ab01740bbbfcc059fd748163787554f7c8977e64")
+        # OuteTTS's speaker-building Whisper (#2700).
+        self.assertEqual(expected.pop("mlx-community/whisper-large-v3-turbo-asr-fp16"),
+                         "624c19c9af5603fa73b83bce14d4aeea96156d18")
         # Preserve ALL 42 pre-existing pins from base 06c6e077 unchanged.
         self.assertEqual(ml.digest(expected), "1f4811c855d9f70882aa325ad5cd44f2036cd9fc2e676bac9c1ff23008695816")
         self.assertEqual(expected["openbmb/VoxCPM2"], "bffb3df5a29440629464e5e839f4d214c8714c3d")
@@ -398,6 +401,16 @@ class ProductionTests(unittest.TestCase):
         actual = json.loads((ROOT / "docs/licensing/model-license-data.json").read_text(encoding="utf-8"))
         self.assertEqual(actual, expected)
         self.assertEqual(actual["enforcement"], "disclosure_only")
+
+    def test_package_entries_are_catalogued_by_their_own_id(self):
+        # A catalogue entry with its own ``id`` (one package of a shared repo)
+        # must mark its licence record as offered, not only whole-repo entries.
+        spec = importlib.util.spec_from_file_location("generate_model_license_data",
+                                                      ROOT / "scripts/generate_model_license_data.py")
+        module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        rows = {row["id"]: row for row in module.generate(ROOT)["models"]}
+        self.assertTrue(rows["audio-cpp/audio.cpp-gguf:dots-tts-soar-q8_0"]["catalogued"])
+        self.assertTrue(rows["audio-cpp/audio.cpp-gguf"]["catalogued"])
 
     def test_v1_migration_preserves_unknowns_and_evidence(self):
         spec = importlib.util.spec_from_file_location("migrate_model_licenses",
@@ -419,12 +432,12 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(migrated["dynamic_assets"], old["dynamic_assets"])
 
     def test_explicit_legacy_scope_and_separate_cache(self):
-        source = (ROOT / "backend/api/routers/model_licenses.py").read_text()
+        source = (ROOT / "backend/api/routers/model_licenses.py").read_text(encoding="utf-8")
         self.assertIn('store / "artifacts"', source)
         self.assertIn('cache_dir=cache_dir', source)
         self.assertNotIn('snapshot_download(', source)
         self.assertNotIn('install_model(', source)
-        router = (ROOT / "backend/api/routers/setup/__init__.py").read_text()
+        router = (ROOT / "backend/api/routers/setup/__init__.py").read_text(encoding="utf-8")
         self.assertLess(router.index('include_router(_model_licenses_router)'),
                         router.index('include_router(_download_router)'))
 

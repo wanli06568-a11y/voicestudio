@@ -79,7 +79,11 @@ logger = logging.getLogger("omnivoice.dub_pipeline")
 def _media_process_error(tool: str, returncode: int, stderr: bytes, *, paths=()) -> str:
     """Keep the actionable end of native diagnostics without leaking paths."""
     from core.scrub import scrub_text
-    detail = stderr.decode(errors="replace")
+    detail = stderr.decode(errors="replace").replace("\r\n", "\n")
+    # Progress bars (Demucs tqdm, ffmpeg stats) redraw one line with "\r";
+    # keep only each line's final frame so they can't push the real error
+    # out of the tail (#3751).
+    detail = "\n".join(line.rstrip("\r").rsplit("\r", 1)[-1] for line in detail.split("\n"))
     # Input/output may live outside home directories (mounted media, Windows
     # drive roots). Remove the exact command paths before generic scrubbing.
     for path in sorted((str(p) for p in paths if p), key=len, reverse=True):
@@ -862,13 +866,13 @@ def _probe_codecs(path: str) -> tuple[str, str]:
         out = subprocess.run(
             local_inputs_only([ffprobe, "-v", "error", "-select_streams", "v:0",
              "-show_entries", "stream=codec_name", "-of", "csv=p=0", path], tool="ffprobe"),
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
         )
         vcodec = (out.stdout or "").strip().lower()
         out = subprocess.run(
             local_inputs_only([ffprobe, "-v", "error", "-select_streams", "a:0",
              "-show_entries", "stream=codec_name", "-of", "csv=p=0", path], tool="ffprobe"),
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
         )
         acodec = (out.stdout or "").strip().lower()
         return vcodec, acodec
@@ -1752,9 +1756,15 @@ async def ingest_pipeline(
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                logger.warning("Demucs failed for %s, falling back to mixed audio: %s", log_safe(job_id), log_safe(e))
+                from core.scrub import scrub_text
+                detail = f"{type(e).__name__}: {scrub_text(str(e))}"
+                logger.warning("Demucs failed for %s, falling back to mixed audio: %s", log_safe(job_id), log_safe(detail, limit=12100))
                 # plan-04: surface the degradation (job continues with mixed audio).
-                yield prep_event("warning", **failure.build_failure(e, stage="demucs", include_diagnostic=False))
+                warning = failure.build_failure(e, stage="demucs", include_diagnostic=False)
+                yield prep_event("warning", **{
+                    key: scrub_text(value) if isinstance(value, str) else value
+                    for key, value in warning.items()
+                })
                 vocals_path = audio_path
                 no_vocals_path = None
             yield prep_event("demucs_done",

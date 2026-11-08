@@ -52,12 +52,16 @@ export function takeSettings(item: HistoryItem): Partial<TakeSettings> {
     language: item.language || 'Auto',
     instruct: item.instruct || '',
     selectedProfileId: item.profile_id,
+    // A transcript never rides along with a take, not even its own saved
+    // edit: blank means the selected saved voice uses its stored transcript.
+    refText: '',
   };
   const neutralEmotion = {
     emotionMode: DEFAULT_CLONE_SETTINGS.emotionMode,
     emotionText: DEFAULT_CLONE_SETTINGS.emotionText,
     emotionAlpha: DEFAULT_CLONE_SETTINGS.emotionAlpha,
     emotionVector: [...DEFAULT_CLONE_SETTINGS.emotionVector],
+    direction: DEFAULT_CLONE_SETTINGS.direction,
   };
   const fallback = { ...neutralEmotion, ...identity };
   try {
@@ -85,7 +89,16 @@ export function takeSettings(item: HistoryItem): Partial<TakeSettings> {
       delete safe.emotionAlpha;
       delete safe.emotionVector;
     }
-    return { ...neutralEmotion, ...safe, ...identity };
+    // A take rendered with a delivery direction has style + direction joined
+    // in the history's instruct; restore the two fields from the snapshot so
+    // reusing it does not send the direction twice.
+    const directed = typeof safe.direction === 'string' && safe.direction.trim() !== '';
+    return {
+      ...neutralEmotion,
+      ...safe,
+      ...identity,
+      ...(directed && typeof safe.instruct === 'string' ? { instruct: safe.instruct } : {}),
+    };
   } catch {
     return fallback;
   }

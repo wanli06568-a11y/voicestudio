@@ -174,7 +174,7 @@ _HINTS: dict[str, str] = {
     # (greptile on #1377). tests/test_failure_classify.py pins these literals
     # to the constraint file so they cannot drift when the pins bump.
     "TRANSFORMERS_IMPORT": "A transformers component could not load. Missing packages and torch/torchvision version mismatches are possible causes, not a diagnosis. Check the underlying traceback and installed package versions first. If a package mismatch or incomplete install is confirmed, reinstall them together at the pinned versions (`uv pip install --python .venv --reinstall torch==2.8.0 torchaudio==2.8.0 torchvision==0.23.0 transformers` in the project folder), then restart the backend. If only transcription is affected, switching ASR to faster-whisper (Use on its row in Model Catalogue) also works around it.",
-    "WINDOWS_APP_CONTROL_BLOCKED": "Windows refused to load a file VoiceStudio needs — an Application Control policy (Smart App Control, WDAC, or AppLocker) blocked it. On a personal PC: Windows Security → App & browser control → Smart App Control → Off (Windows only lets you turn it off once — re-enabling requires a Windows reset), then restart VoiceStudio. On a managed/work PC, ask IT to allow the VoiceStudio install folder.",
+    "WINDOWS_APP_CONTROL_BLOCKED": "Windows refused to load a file VoiceStudio needs. An Application Control policy blocked it. Smart App Control, WDAC, or AppLocker can cause this. If Windows Security shows that Smart App Control is on, turn it off: Windows Security → App & browser control → Smart App Control → Off, then restart VoiceStudio. On a managed/work PC, ask IT to allow the VoiceStudio install folder.",
     "WINDOWS_PAGING_FILE_TOO_SMALL": "Windows ran out of virtual memory while mapping the model into memory — its paging file is smaller than the model needs. This is not the same as your RAM being full, and closing other apps usually won't fix it: Windows has to be allowed to back the mapping. Set a bigger paging file — Settings → System → About → Advanced system settings → Performance → Settings → Advanced → Virtual memory → Change: untick \"Automatically manage\", pick your system drive, choose \"Custom size\" and set both Initial and Maximum to at least 32768 MB (more than the model's size), then OK and restart Windows. A smaller/quantized engine (OmniVoice GGUF, Supertonic-3) also avoids the large mapping entirely.",
     "WINDOWS_UNTRUSTED_MOUNT": "Windows refused to walk a folder on the way to this file because the path crosses a mount point it does not trust (WinError 448). That is a Windows rule about the VOLUME, not about VoiceStudio or the file itself — it turns up on Dev Drives, on mounted VHD/ReFS volumes, and on junctions pointing into another user profile, so retrying the same link cannot help. Point VoiceStudio at a folder on an ordinary local drive instead: Settings → Storage → data directory, or the download/output folder named in the message. If that folder has to stay where it is, trust the volume with `fsutil devdrv trust <drive>:` from an elevated prompt and restart.",
     "INPUT_TOO_SHORT": "The input was too short for this engine to process — its first convolution needs more frames than the text (or the reference clip) produced. This is a hard limit of the model, not a transient failure, so retrying the same input will fail the same way. Give it a few more words, or a longer reference clip: a short phrase rather than one or two characters, and about a second of speech rather than a fragment.",
@@ -454,28 +454,20 @@ _CONTEXT_FREE_HINT_CLASSES = frozenset({
     # global 500 handler, the streaming frame) as the bare "VoiceStudio hit an
     # internal error" even though the error journal already named DISK_FULL.
     "DISK_FULL",
-    # #2177: CUDA's own "no kernel image is available for execution" — a driver
-    # sentence no other failure produces, and the one class a streaming render
-    # on an unsupported card hits every single time. The non-streaming path has
-    # named this since #756; the streaming frame could only answer with the
-    # floor message, so the report arrived as a bare RuntimeError.
+    # CUDA's own "no kernel image is available" sentence: only a torch build
+    # lacking kernels for this GPU's architecture produces it.
     "GPU_ARCH_UNSUPPORTED",
-    # #1227's trigger is the numeric WinError (4551/1260), locale-independent
-    # and unmistakable — the same reasoning that already admits
-    # WINDOWS_UNTRUSTED_MOUNT (448) and WINDOWS_PAGING_FILE_TOO_SMALL (1455).
-    # Left out when those two were added, so a blocked load reached a streaming
-    # render with no way to learn an Application Control policy caused it.
+    # Keyed on the numeric WinError (4551/1260), which no other failure
+    # raises; previously only the non-streaming path surfaced its hint.
     "WINDOWS_APP_CONTROL_BLOCKED",
     # Matched on SOURCE_LANGUAGE_REQUIRED_MESSAGE, a sentence this app writes
     # itself (SourceLanguageRequiredError), so no foreign text can claim it.
     # It is terminal, and a terminal class without its hint would end a render
     # while explaining nothing.
     "SOURCE_LANGUAGE_REQUIRED",
-    # Matched on the library name or ``audio_io.AUDIO_WRITE_FAILED_MARKER`` — a
-    # marker chosen over generic wording precisely so an unrelated open cannot
-    # claim the audio remedy. The desktop app already routes this topic to
-    # Settings → Storage, a recovery that could never fire while the hint was
-    # dropped before reaching the client.
+    # Keyed on the audio library's name or the audio-write marker in
+    # ``audio_io``; the desktop app already sends this topic to Settings ->
+    # Storage.
     "AUDIO_IO_FAILED",
     "SOCKS_PROXY_SUPPORT_MISSING",
     "SSL_HANDSHAKE_FAILURE",
@@ -519,32 +511,27 @@ _CONTEXT_FREE_HINT_CLASSES = frozenset({
 })
 
 
-#: Classes that cannot succeed on a retry of the same request. The failure is in
-#: the build, the device selection or an OS policy — none of which a second
-#: render changes — so the stream frame marks them terminal rather than
-#: inviting the "try again" the floor message ends with. #2177's reporter ran
-#: the same generation twice, ninety seconds apart, to the same result.
-#:
-#: `terminal` also stops the client re-rendering the whole text on the classic
-#: path (``shouldFallbackToClassic``), which for these classes would fail
-#: identically after paying for the render twice.
+# Classes where retrying the identical request cannot help: the cause is the
+# build, the device choice, an OS policy, or content that is simply absent.
+# Each member must also be in _CONTEXT_FREE_HINT_CLASSES, otherwise a render
+# would be declared final without saying why. Disk space and memory can
+# recover, so AUDIO_IO_FAILED / GPU_OOM / HOST_MEMORY_EXHAUSTED stay out.
 _TERMINAL_FAILURE_CLASSES = frozenset({
     "GPU_ARCH_UNSUPPORTED",
     "WINDOWS_APP_CONTROL_BLOCKED",
-    # The same file has no audio on every retry.
     "NO_AUDIO_TRACK",
-    # The same transcript reports no language on every retry.
     "SOURCE_LANGUAGE_REQUIRED",
-    # A missing package or a missing transcript model does not appear between
-    # two renders of the same request.
     "ENGINE_DEPENDENCY_MISSING",
     "REFERENCE_STT_MISSING",
 })
 
 
 def is_terminal_failure_topic(topic: str | None) -> bool:
-    """Whether repeating the same render cannot repair the diagnosed cause."""
-    return topic in _TERMINAL_FAILURE_CLASSES
+    """True when ``topic`` names a failure that a retry will reproduce."""
+    try:
+        return isinstance(topic, str) and topic in _TERMINAL_FAILURE_CLASSES
+    except Exception:
+        return False
 
 
 def append_hint(text: str) -> str:
@@ -570,6 +557,8 @@ _GPU_OOM_SIGNATURES = (
     "mps backend out of memory",
     "hip out of memory",
     "out of memory on device",
+    "xpu out of memory",           # torch's Intel XPU caching allocator
+    "out_of_device_memory",        # Intel XPU driver: UR_RESULT_ERROR_OUT_OF_DEVICE_MEMORY
 )
 
 
@@ -708,13 +697,9 @@ def classify(reason: BaseException | str) -> str:
     # it could not write (#1225) — a strictly more specific remedy.
     if (disk_full or is_disk_full_error(low)) and not _is_download_write_refusal(reason, low):
         return "DISK_FULL"
-    # #2177: the GPU's compute capability isn't in this torch build's arch list,
-    # so CUDA refuses to launch kernels. Checked after the OOM branch so real
-    # memory pressure is never relabelled, and matched on CUDA's own sentence —
-    # nothing else produces it, which is what makes the hint safe to attach on
-    # the context-free surfaces. ``generation.py`` already re-raises this class
-    # with the same remedy; without a topic the streaming frame could only show
-    # "Generation failed. Check the selected engine and try again."
+    # The CUDA runtime's wording for "this torch build has no kernels for the
+    # GPU's compute capability". Placed after the memory/disk classes so real
+    # resource pressure keeps its own class.
     if "no kernel image is available" in low:
         return "GPU_ARCH_UNSUPPORTED"
     # Before the errno / "invalid argument" rules: ffmpeg's no-stream failure

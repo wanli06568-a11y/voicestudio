@@ -24,6 +24,10 @@ class CosyVoiceGGUFBackend(TTSBackend):
     gpu_compat = ("cpu", "vulkan")
     supports_cloning = True
     supports_voice_design = False
+    # The speak payload carries model/voice/text/instruct/seed/speed only —
+    # no quality knobs (#3654).
+    supports_num_step = False
+    supports_guidance_scale = False
     supports_generation_seed = True
     runs_out_of_process = True
     _is_subprocess_isolated = True
@@ -109,6 +113,10 @@ class CosyVoiceGGUFBackend(TTSBackend):
             )
         if not Path(reference).is_file():
             raise TTSInputError("CosyVoice GGUF reference recording was not found.")
+        if not transcript:
+            from services.tts_backend import required_reference_transcript
+
+            transcript = required_reference_transcript(reference, transcript)
         if not transcript:
             raise TTSInputError(
                 "CosyVoice GGUF requires the reference transcript to prepare its voice prompt."

@@ -20,6 +20,7 @@ WORKDIR /app
 # so `bun install` caches independently of source edits.
 COPY package.json bun.lock ./
 COPY electron/package.json ./electron/
+COPY patches/ ./patches/
 COPY config/ ./config/
 
 RUN bun install --frozen-lockfile
@@ -108,6 +109,7 @@ RUN python3 -m pip install --no-cache-dir uv
 COPY pyproject.toml uv.lock README.md ./
 COPY deploy/torch-constraints.txt ./deploy/torch-constraints.txt
 COPY deploy/uv-overrides.txt ./deploy/uv-overrides.txt
+COPY deploy/security-constraints.txt deploy/security_floors.py ./deploy/
 
 # Install the project (non-editable — no need for -e in containers).
 # Uses `uv` for exponentially faster resolution than plain pip.
@@ -130,11 +132,16 @@ COPY deploy/uv-overrides.txt ./deploy/uv-overrides.txt
 # segment, so they match the base image's +cu128 / +rocm6.4 builds rather than
 # replacing them.
 #
+# The second --constraint carries the rest of `constraint-dependencies` (the
+# security floors), for the same reason: a base image's older compatible
+# package would otherwise survive below the floor.
+#
 # --override: `[tool.uv] override-dependencies` lifts caps that block security
 # releases (gradio's `pillow<13`), but `uv pip install` applies it only when run
 # from the project directory with a recent uv; pass it explicitly (#3275).
 RUN uv pip install --python "$(command -v python3)" --no-cache \
     --constraint deploy/torch-constraints.txt \
+    --constraint deploy/security-constraints.txt \
     --override deploy/uv-overrides.txt .
 
 # Guard: every security override must be what the image actually installed.
@@ -143,6 +150,20 @@ RUN python3 -c "from importlib.metadata import version; from packaging.requireme
     bad = [f'{r.name} {version(r.name)} does not satisfy {r}' for r in reqs if not r.specifier.contains(version(r.name), prereleases=True)]; \
     assert not bad, bad; \
     print('uv overrides applied:', ', '.join(f'{r.name} {version(r.name)}' for r in reqs))"
+
+# Security floors for packages the base image already ships but nothing here
+# requires: the install above leaves them alone (msgpack 1.1.1 in
+# pytorch/pytorch), so upgrade what is below its floor, then fail the build if
+# anything still is. Packages the image does not install are skipped.
+RUN floors="$(python3 deploy/security_floors.py requirements)" \
+    && if [ -n "$floors" ]; then \
+        echo "Raising to security floors: $floors" \
+        && uv pip install --python "$(command -v python3)" --no-cache \
+            --constraint deploy/torch-constraints.txt \
+            --constraint deploy/security-constraints.txt \
+            --override deploy/uv-overrides.txt $floors; \
+    fi \
+    && python3 deploy/security_floors.py check
 
 # Guard (fails the build, not the user at runtime): assert the dependency
 # install did NOT replace the base image's GPU torch. A future dep bump that
@@ -157,29 +178,22 @@ RUN python3 -c "import os, torch, torchaudio, torchvision; \
     import torchvision.ops; torchvision.ops.nms; \
     print('torchvision C++ ops resolve against this torch')"
 
-# CTranslate2 (WhisperX, faster-whisper) links cuDNN 8, but the CUDA base image
-# ships cuDNN 9, so libcudnn_ops_infer.so.8 is absent and loading it aborts the
-# backend process outright rather than raising (#1371). scripts/setup.py
-# side-loads the cuDNN 8 libraries for source installs; the image needs the same
-# shim or Docker users lose every CTranslate2 ASR engine (#2050).
-#
-# The target is derived from sys.prefix rather than hardcoded: backend/core/
-# cudnn8.py looks for <sys.prefix>/lib/pythonX.Y/site-packages/cudnn8_compat,
-# and sys.prefix differs between the conda-based CUDA image and the ROCm venv.
-# --no-deps keeps this to the cuDNN wheels alone, leaving the base image's torch
-# stack untouched. Skipped for ROCm, which does not use cuDNN, and on aarch64
-# (DGX Spark / GH200 builds, #2831): NVIDIA publishes no aarch64 wheel of
-# nvidia-cudnn-cu12==8.9.7.29, so CTranslate2 ASR engines stay unavailable there.
+# CTranslate2 (WhisperX, faster-whisper) is linked against cuDNN 8 while the
+# CUDA base image ships cuDNN 9. When libcudnn_ops_infer.so.8 is missing the
+# whole backend process aborts instead of raising (#1371). scripts/setup.py
+# side-loads cuDNN 8 for source installs (#2050); the image needs the same,
+# placed where backend/core/cudnn8.py looks.
+# Skipped for ROCm (no cuDNN there) and for aarch64: nvidia-cudnn-cu12==8.9.7.29
+# has no aarch64 wheel (DGX Spark / GH200 builds, #2831), so CTranslate2 ASR
+# stays unavailable on those images.
 RUN if [ "$GPU_FLAVOR" = "cuda" ] && [ "$(uname -m)" != "aarch64" ]; then \
-      target="$(python3 -c "import os, sys; print(os.path.join(sys.prefix, 'lib', 'python%d.%d' % sys.version_info[:2], 'site-packages', 'cudnn8_compat'))")" && \
-      uv pip install --python "$(command -v python3)" --no-cache --no-deps \
-        --target "$target" nvidia-cudnn-cu12==8.9.7.29 && \
-      python3 -c "import os, sys; d = os.path.join(sys.prefix, 'lib', 'python%d.%d' % sys.version_info[:2], 'site-packages', 'cudnn8_compat', 'nvidia', 'cudnn', 'lib'); \
-        libs = [f for f in os.listdir(d) if '.so.8' in f]; \
-        assert libs, 'cudnn8_compat installed but no .so.8 libraries in ' + d; \
-        print('cuDNN 8 compat libraries: %d' % len(libs))"; \
+        target="$(python3 -c "import sys; print(f'{sys.prefix}/lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages/cudnn8_compat')")" \
+        && uv pip install --python "$(command -v python3)" --no-cache --no-deps \
+            --target "$target" nvidia-cudnn-cu12==8.9.7.29 \
+        && CUDNN8_TARGET="$target" python3 -c "import glob, os; t = os.environ['CUDNN8_TARGET']; found = [f for f in glob.glob(t + '/nvidia/cudnn/lib/*') if '.so.8' in f]; assert found, 'cuDNN 8 libraries missing from ' + t; print(f'cuDNN 8 compat: {len(found)} libraries in ' + t)"; \
+    else \
+        echo "cuDNN 8 compat skipped (GPU_FLAVOR=$GPU_FLAVOR, arch=$(uname -m))"; \
     fi
-
 # Copy application source
 COPY backend/ ./backend/
 COPY omnivoice/ ./omnivoice/

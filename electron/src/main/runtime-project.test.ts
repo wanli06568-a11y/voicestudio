@@ -1,19 +1,37 @@
 // @vitest-environment node
+import { RuntimeLaunchRefusedError } from './runtime-launch-refusal';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, readFile, rm, writeFile, statfs } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, readFile, rm, writeFile, statfs, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { downloadRuntimeInstaller } from './runtime-download';
+import { createHash } from 'node:crypto';
+import {
+  httpsRangeTransport,
+  PREFETCH_MIN_BYTES,
+  RangeUnsupportedError,
+  type RangeTransport,
+} from './wheel-prefetch';
 import * as pthAscii from './pth-ascii';
+import { PYPI_SPEED_SAMPLE_BYTES } from './pypi-mirror';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import {
   installRuntime,
+  runtimeDownloadEnv,
+  runtimeRequiredGib,
   promoteLegacyRuntimeCaches,
   CUDNN8_COMPAT_PIN,
   MISSING_SYSTEM_LIBRARY_CODE,
+  OUTDATED_SYSTEM_LIBRARY_CODE,
+  RUNTIME_FILES_LOCKED_CODE,
+  msvcp140Outdated,
+  parseNativeDiagnosis,
   NATIVE_DIAGNOSTIC_PREFIX,
   ROCM_TORCH_INDEX,
   ROCM_TORCH_PINS,
+  ROCM_TORCH_PROBE,
+  ROCM_TORCH_PROBE_FAILURE,
+  rocmTorchInstallArgs,
   rocmTorchOptIn,
   RUNTIME_IMPORT_PROBE,
   RUNTIME_NATIVE_DIAGNOSTIC_PROBE,
@@ -30,6 +48,26 @@ import {
 } from './runtime-project';
 
 vi.mock('./runtime-download', () => ({ downloadRuntimeInstaller: vi.fn() }));
+
+it.each([
+  ['darwin', 'default', 5],
+  ['darwin', 'cpu', 5],
+  ['linux', 'cpu', 5],
+  ['win32', 'cpu', 5],
+  ['linux', 'default', 9],
+  ['win32', 'default', 9],
+  ['linux', 'rocm', 9],
+  ['win32', 'rocm', 9],
+] as const)(
+  'publishes the %s/%s runtime preflight minimum as %s GiB',
+  (platform, variant, expected) => {
+    expect(runtimeRequiredGib(platform, variant)).toBe(expected);
+  },
+);
+vi.mock('./wheel-prefetch', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./wheel-prefetch')>();
+  return { ...actual, httpsRangeTransport: vi.fn(actual.httpsRangeTransport) };
+});
 
 vi.mock('node:fs/promises', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:fs/promises')>()),
@@ -90,7 +128,64 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
+it('estimates disk space without accepting unsupported Windows ARM64 ROCm installs', async () => {
+  forcePlatform('win32');
+  vi.spyOn(process, 'arch', 'get').mockReturnValue('arm64');
+  vi.stubEnv('OMNIVOICE_TORCH_VARIANT', 'rocm');
+  expect(runtimeRequiredGib()).toBe(9);
+  const { bundle, project } = await fixture();
+  const run = vi.fn();
+  await expect(
+    installRuntime(bundle, project, null, run, new AbortController().signal),
+  ).rejects.toThrow('Windows ROCm requires Windows x64 Python 3.12 (cp312).');
+  expect(run).not.toHaveBeenCalled();
+  expect(downloadRuntimeInstaller).not.toHaveBeenCalled();
+});
+
 describe('packaged runtime setup', () => {
+  it('gives large downloads 900 seconds while preserving explicit timeout overrides', () => {
+    vi.stubEnv('UV_HTTP_TIMEOUT', '');
+    vi.stubEnv('UV_HTTP_CONNECT_TIMEOUT', '');
+    vi.stubEnv('UV_HTTP_RETRIES', '');
+    for (const region of ['auto', 'global', 'china', 'russia', 'restricted'] as const) {
+      expect(runtimeDownloadEnv(region)).toMatchObject({
+        UV_HTTP_TIMEOUT: '900',
+        UV_HTTP_CONNECT_TIMEOUT: '30',
+        UV_HTTP_RETRIES: '5',
+      });
+    }
+    vi.stubEnv('UV_HTTP_TIMEOUT', '1800');
+    expect(runtimeDownloadEnv('global').UV_HTTP_TIMEOUT).toBe('1800');
+  });
+  it('passes the timeout to both the mirrored sync and its origin fallback', async () => {
+    vi.stubEnv('UV_HTTP_TIMEOUT', '');
+    const { bundle, project } = await fixture();
+    await writeFile(
+      join(bundle, 'uv.lock'),
+      'url = "https://files.pythonhosted.org/packages/test.whl"',
+    );
+    const environments: NodeJS.ProcessEnv[] = [];
+    const run = vi.fn(
+      async (_command: string, args: string[], _cwd: string, env?: NodeJS.ProcessEnv) => {
+        if (args[0] !== 'sync' || args.includes('--dry-run')) return undefined;
+        environments.push(env ?? {});
+        if (environments.length === 1) throw new Error('mirror connection reset');
+        await interpreter(project);
+        return undefined;
+      },
+    );
+    await installRuntime(
+      bundle,
+      project,
+      'uv',
+      run,
+      new AbortController().signal,
+      undefined,
+      'china',
+    );
+    expect(environments).toHaveLength(2);
+    for (const env of environments) expect(env.UV_HTTP_TIMEOUT).toBe('900');
+  });
   it.each(['win32', 'linux'] as const)(
     'does not import torch for the CUDA compatibility probe on a %s CPU runtime',
     async (platform) => {
@@ -313,7 +408,12 @@ describe('packaged runtime setup', () => {
       'installing_deps',
       'verifying',
     ]);
-    expect(run.mock.calls).toHaveLength(process.platform === 'darwin' ? 2 : 3);
+    // Preparing and finding Python for the interpreter check, the dry run that
+    // plans multi-connection downloads (#3411), the sync, the import check, and
+    // off macOS the CUDA compatibility probe.
+    expect(run.mock.calls).toHaveLength(process.platform === 'darwin' ? 5 : 6);
+    expect(run.mock.calls[0]![1]).toEqual(expect.arrayContaining(['python', 'install']));
+    expect(run.mock.calls[2]![1]).toEqual(expect.arrayContaining(['-v', 'sync', '--dry-run']));
     expect(await runtimeReady(bundle, project)).toBe(true);
     await writeFile(join(bundle, 'uv.lock'), 'updated dependencies');
     expect(await runtimeReady(bundle, project)).toBe(false);
@@ -413,14 +513,112 @@ describe('packaged runtime setup', () => {
     expect(reinstall?.[1]).toEqual([
       'pip',
       'install',
-      '--reinstall',
       '--python',
       runtimePython(project),
-      ...ROCM_TORCH_PINS,
-      '--index-url',
-      'https://mirror.invalid/rocm',
+      ...rocmTorchInstallArgs('https://mirror.invalid/rocm'),
     ]);
     expect(ROCM_TORCH_INDEX).toContain('/rocm');
+  });
+  it.each([false, true])(
+    'repairs executable-stack libraries after a ROCm swap (existing environment: %s)',
+    async (existing) => {
+      forcePlatform('linux');
+      vi.spyOn(process, 'arch', 'get').mockReturnValue('x64');
+      vi.stubEnv('OMNIVOICE_TORCH_VARIANT', 'rocm');
+      const { bundle, project } = await fixture();
+      const sitePackages = join(project, '.venv', 'lib', 'python3.11', 'site-packages');
+      const library = join(sitePackages, 'ctranslate2.libs', 'libctranslate2-d3638643.so.4.4.0');
+      const installLibrary = async () => {
+        await interpreter(project);
+        await mkdir(dirname(library), { recursive: true });
+        const elf = Buffer.alloc(120);
+        elf.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]);
+        elf.writeBigUInt64LE(64n, 32);
+        elf.writeUInt16LE(56, 54);
+        elf.writeUInt16LE(1, 56);
+        elf.writeUInt32LE(0x6474e551, 64);
+        elf.writeUInt32LE(7, 68);
+        await writeFile(library, elf);
+      };
+      if (existing) await installLibrary();
+      let importFailures = 0;
+      const run = vi.fn(async (_command: string, args: string[]) => {
+        if (args[0] === 'sync' && !args.includes('--dry-run')) await installLibrary();
+        if (args[0] === 'pip' && args[1] === 'install') {
+          if (args.includes('--index-url') || args.includes('--reinstall')) {
+            throw new Error('No solution found: only pillow<=12.3.0 is available');
+          }
+        }
+        if (args[1]?.includes('VOICESTUDIO_CUDNN8_PROBE=')) {
+          expect(args[1]).not.toContain('import torch');
+          return `VOICESTUDIO_CUDNN8_PROBE=${JSON.stringify({ device: 'hip', sitePackages })}\n`;
+        }
+        // The torch-only native probe never imports faster_whisper/CTranslate2.
+        if (args[1] === RUNTIME_IMPORT_PROBE) {
+          if ((await readFile(library)).readUInt32LE(68) & 1) {
+            importFailures += 1;
+            throw new Error(
+              'ImportError: libctranslate2-d3638643.so.4.4.0: cannot enable executable stack as shared object requires: Invalid argument',
+            );
+          }
+        }
+        return undefined;
+      });
+      await installRuntime(
+        bundle,
+        project,
+        'uv',
+        run,
+        new AbortController().signal,
+        undefined,
+        'global',
+      );
+      expect(importFailures).toBe(existing ? 1 : 0);
+      for (const [, args] of run.mock.calls) {
+        if (args[0] === 'sync') expect(args).not.toContain('--reinstall-package');
+      }
+      expect((await readFile(library)).readUInt32LE(68)).toBe(6);
+      expect(await runtimeReady(bundle, project)).toBe(true);
+    },
+  );
+  it('refuses to mark a non-ROCm torch ready after a ROCm install', async () => {
+    forcePlatform('linux');
+    const { bundle, project } = await fixture();
+    vi.stubEnv('OMNIVOICE_TORCH_VARIANT', 'rocm');
+    vi.stubEnv('OMNIVOICE_TORCH_INDEX', 'https://mirror.invalid/simple');
+    const run = vi.fn(
+      async (_command: string, args: string[], _cwd: string, _env?: NodeJS.ProcessEnv) => {
+        await interpreter(project);
+        if (args[0] === '-c' && args[1] === ROCM_TORCH_PROBE) throw new Error('exit 1');
+      },
+    );
+    await expect(
+      installRuntime(bundle, project, 'uv', run, new AbortController().signal),
+    ).rejects.toThrow(ROCM_TORCH_PROBE_FAILURE);
+  });
+  it('swaps only the torch stack and keeps the default index for its dependencies', () => {
+    // #3158: `--index-url` + `--reinstall` forced Pillow onto PyTorch's index,
+    // which has no Pillow 13, so the ROCm swap was unsatisfiable.
+    const args = rocmTorchInstallArgs(ROCM_TORCH_INDEX);
+    expect(args).not.toContain('--reinstall');
+    expect(args).not.toContain('--index-url');
+    expect(args).toEqual([
+      '--reinstall-package',
+      'torch',
+      '--reinstall-package',
+      'torchaudio',
+      '--reinstall-package',
+      'torchvision',
+      'torch==2.8.0+rocm6.4',
+      'torchaudio==2.8.0+rocm6.4',
+      'torchvision==0.23.0+rocm6.4',
+      '--extra-index-url',
+      ROCM_TORCH_INDEX,
+      '--index-strategy',
+      'unsafe-best-match',
+    ]);
+    // A mirror without a rocm-style name keeps the bare pins.
+    expect(rocmTorchInstallArgs('https://mirror.invalid/rocm/')).toContain('torch==2.8.0');
   });
   it('leaves macOS on its native stack when ROCm is requested', async () => {
     forcePlatform('darwin');
@@ -588,6 +786,92 @@ describe('packaged runtime setup', () => {
       installRuntime(bundle, project, 'uv', run, new AbortController().signal),
     ).rejects.toMatchObject({ code: MISSING_SYSTEM_LIBRARY_CODE });
   });
+  it('treats a finished runtime with a leftover install marker as ready, not interrupted (#3475)', async () => {
+    const { bundle, project } = await fixture();
+    await installRuntime(
+      bundle,
+      project,
+      'uv',
+      async () => interpreter(project),
+      new AbortController().signal,
+      undefined,
+      'global',
+    );
+    // The marker survived the finished install (Windows refused its removal).
+    const marker = join(project, '.runtime-installing');
+    await writeFile(marker, '');
+    const old = new Date(Date.now() - 60_000);
+    await utimes(marker, old, old);
+
+    expect(await runtimeInstallInterrupted(project)).toBe(false);
+    expect(await runtimeReady(bundle, project)).toBe(true);
+    expect(await runtimeCompatible(bundle, project)).toBe(true);
+    expect(existsSync(marker)).toBe(false);
+  });
+  it('still reports an install that started after the last ready marker as interrupted', async () => {
+    const { bundle, project } = await fixture();
+    await installRuntime(
+      bundle,
+      project,
+      'uv',
+      async () => interpreter(project),
+      new AbortController().signal,
+      undefined,
+      'global',
+    );
+    const old = new Date(Date.now() - 60_000);
+    await utimes(join(project, '.runtime-ready'), old, old);
+    await writeFile(join(project, '.runtime-installing'), new Date().toISOString());
+
+    expect(await runtimeInstallInterrupted(project)).toBe(true);
+    expect(await runtimeReady(bundle, project)).toBe(false);
+  });
+  it('resumes an interrupted install from the uv cache instead of evicting its wheels (#3475)', async () => {
+    const { bundle, project } = await fixture();
+    await interpreter(project);
+    await writeFile(join(project, '.runtime-installing'), new Date().toISOString());
+    let synced = false;
+    const run = vi.fn(async (command: string, args: string[]) => {
+      if (args[0] === 'sync') synced = true;
+      if (
+        !synced &&
+        command === runtimePython(project) &&
+        (args[1] === RUNTIME_IMPORT_PROBE || args[1] === RUNTIME_NATIVE_IMPORT_PROBE)
+      ) {
+        throw new Error("No module named 'torch'");
+      }
+    });
+    await installRuntime(bundle, project, 'uv', run, new AbortController().signal);
+    expect(run.mock.calls.some(([, args]) => args[0] === 'cache')).toBe(false);
+    const sync = run.mock.calls.find(([, args]) => args[0] === 'sync');
+    expect(sync?.[1]).toContain(runtimePython(project));
+    expect(await runtimeReady(bundle, project)).toBe(true);
+    expect(await runtimeInstallInterrupted(project)).toBe(false);
+  });
+  it('keeps an installed CPU torch through a re-run instead of uninstalling it (#3475)', async () => {
+    forcePlatform('win32');
+    vi.spyOn(process, 'arch', 'get').mockReturnValue('x64');
+    vi.stubEnv('OMNIVOICE_TORCH_VARIANT', 'cpu');
+    const { bundle, project } = await fixture();
+    const sitePackages = join(project, '.venv', 'Lib', 'site-packages');
+    const run = vi.fn(async (_command: string, args: string[]) => {
+      if (args[0] === 'sync') await interpreter(project);
+      if (args[1]?.includes('VOICESTUDIO_CUDNN8_PROBE=')) {
+        return `VOICESTUDIO_CUDNN8_PROBE=${JSON.stringify({ device: 'none', sitePackages })}\n`;
+      }
+      return undefined;
+    });
+    const install = () =>
+      installRuntime(bundle, project, 'uv', run, new AbortController().signal, undefined, 'global');
+    await install();
+    const syncs = () => run.mock.calls.filter(([, args]) => args[0] === 'sync');
+    // First install: exact, nothing CPU-specific to keep yet.
+    expect(syncs()[0]?.[1]).not.toContain('--inexact');
+    await install();
+    const resync = syncs()[1]?.[1];
+    expect(resync).toContain('--inexact');
+    expect(resync).toEqual(expect.arrayContaining(['--no-install-package', 'torch']));
+  });
   it('repairs sentencepiece without evicting healthy PyTorch wheels', async () => {
     const { bundle, project } = await fixture();
     await interpreter(project);
@@ -702,6 +986,88 @@ describe('packaged runtime setup', () => {
     expect(existsSync(join(project, 'backend', 'obsolete.py'))).toBe(false);
     expect(existsSync(join(project, '.incoming-backend'))).toBe(false);
   });
+  it('updates in place when a locked .previous folder blocks the swap (#3409)', async () => {
+    const { bundle, project } = await fixture();
+    await stageRuntimeSources(bundle, project);
+    await writeFile(join(bundle, 'backend', 'main.py'), 'new');
+    const previous = join(project, '.previous-backend');
+    const lockedRm = (async (
+      path: Parameters<typeof rm>[0],
+      options?: Parameters<typeof rm>[1],
+    ) => {
+      if (path === previous) throw Object.assign(new Error('EPERM: unlink'), { code: 'EPERM' });
+      return rm(path, options);
+    }) as typeof rm;
+    const rename = vi.fn(async (_from: string, _to: string) => {});
+    await stageRuntimeSources(bundle, project, rename, {
+      fs: { cp, rm: lockedRm },
+      retry: { platform: 'win32', sleep: async () => {} },
+    });
+    expect(await readFile(join(project, 'backend', 'main.py'), 'utf8')).toBe('new');
+    expect(rename.mock.calls.some(([from]) => String(from).includes('backend'))).toBe(false);
+  });
+  it('retries a copy that a scanner briefly blocks before giving up (#3409)', async () => {
+    const { bundle, project } = await fixture();
+    await stageRuntimeSources(bundle, project);
+    await writeFile(join(bundle, 'backend', 'main.py'), 'new');
+    const locked = async () => {
+      throw Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' });
+    };
+    let blocked = 0;
+    const flakyCp = (async (...args: Parameters<typeof cp>) => {
+      if (args[1] === join(project, 'backend') && blocked++ < 2) {
+        throw Object.assign(new Error('EBUSY: resource busy'), { code: 'EBUSY' });
+      }
+      return cp(...args);
+    }) as typeof cp;
+    await stageRuntimeSources(bundle, project, locked, {
+      fs: { cp: flakyCp, rm },
+      retry: { platform: 'win32', sleep: async () => {} },
+    });
+    expect(blocked).toBe(3);
+    expect(await readFile(join(project, 'backend', 'main.py'), 'utf8')).toBe('new');
+  });
+  it('names the lock and the fix when a folder stays locked through every retry (#3409)', async () => {
+    const { bundle, project } = await fixture();
+    await stageRuntimeSources(bundle, project);
+    const locked = async () => {
+      throw Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' });
+    };
+    const lockedCp = (async (...args: Parameters<typeof cp>) => {
+      if (args[1] === join(project, 'backend')) {
+        throw Object.assign(new Error('EPERM: operation not permitted, open'), { code: 'EPERM' });
+      }
+      return cp(...args);
+    }) as typeof cp;
+    const failure = stageRuntimeSources(bundle, project, locked, {
+      fs: { cp: lockedCp, rm },
+      retry: { platform: 'win32', sleep: async () => {} },
+    });
+    await expect(failure).rejects.toMatchObject({ code: RUNTIME_FILES_LOCKED_CODE });
+    await expect(failure).rejects.toThrow(/OneDrive.*press Retry/s);
+    expect(existsSync(join(project, '.incoming-backend'))).toBe(false);
+  });
+  it.each(['darwin', 'linux'] as const)(
+    'keeps a %s permission error as-is instead of the Windows lock guidance',
+    async (platform) => {
+      const { bundle, project } = await fixture();
+      await stageRuntimeSources(bundle, project);
+      const denied = async () => {
+        throw Object.assign(new Error('EACCES: permission denied, rename'), { code: 'EACCES' });
+      };
+      const deniedCp = (async (...args: Parameters<typeof cp>) => {
+        if (args[1] === join(project, 'backend')) {
+          throw Object.assign(new Error('EACCES: permission denied, open'), { code: 'EACCES' });
+        }
+        return cp(...args);
+      }) as typeof cp;
+      const failure = stageRuntimeSources(bundle, project, denied, {
+        fs: { cp: deniedCp, rm },
+        retry: { platform, sleep: async () => {} },
+      });
+      await expect(failure).rejects.toMatchObject({ code: 'EACCES' });
+    },
+  );
   it('still fails on a rename error that is not a lock', async () => {
     const { bundle, project } = await fixture();
     const broken = async () => {
@@ -897,6 +1263,34 @@ describe('packaged runtime setup', () => {
     expect(run).toHaveBeenCalledTimes(1);
     expect(await runtimeReady(bundle, project)).toBe(false);
   });
+  it('stops before any wheel downloads when the interpreter is refused', async () => {
+    const { bundle, project } = await fixture();
+    const run = vi.fn(async (command: string, args: string[]) => {
+      if (args[0] === 'python' && args[1] === 'find')
+        return 'warning: something minor\n/managed/python\nwarning: another\n';
+      if (command === '/managed/python')
+        throw Object.assign(new Error('Could not start /managed/python: spawn UNKNOWN'), {
+          code: 'UNKNOWN',
+        });
+    });
+    const refused = await installRuntime(bundle, project, 'uv', run, new AbortController().signal).catch(
+      (error: unknown) => error,
+    );
+    expect(refused).toBeInstanceOf(RuntimeLaunchRefusedError);
+    expect((refused as RuntimeLaunchRefusedError).program).toBe('/managed/python');
+    expect((refused as Error).message).toBe('spawn UNKNOWN');
+    expect(run.mock.calls.some(([, args]) => args.includes('sync'))).toBe(false);
+    expect(run.mock.calls[0]![1]).toEqual(expect.arrayContaining(['--no-bin', '--no-registry']));
+  });
+  it('leaves other interpreter check problems for the sync to report', async () => {
+    const { bundle, project } = await fixture();
+    const run = vi.fn(async (_command: string, args: string[]) => {
+      if (args[0] === 'python') throw new Error('download failed');
+      await interpreter(project);
+    });
+    await installRuntime(bundle, project, 'uv', run, new AbortController().signal);
+    expect(run.mock.calls.some(([, args]) => args.includes('sync'))).toBe(true);
+  });
   it('pins the release workflow installer version', async () => {
     const release = await readFile(
       new URL('../../../.github/workflows/electron-release.yml', import.meta.url),
@@ -1037,6 +1431,50 @@ describe('regional PyPI mirror for the frozen sync (#3444)', () => {
     },
   );
 
+  describe('the auto region', () => {
+    // Big enough for the speed check to sample.
+    const SAMPLED = LOCK.replace('size = 1 }', 'size = 1048576 }');
+    async function autoInstall(fetchImpl: (url: string) => Promise<Response>) {
+      vi.stubGlobal('fetch', vi.fn(fetchImpl));
+      const { bundle, project } = await fixture();
+      await writeFile(join(bundle, 'uv.lock'), SAMPLED);
+      const { run, seen } = recordingRun(project);
+      const log = vi.fn();
+      await installRuntime(
+        bundle,
+        project,
+        'uv',
+        run,
+        new AbortController().signal,
+        undefined,
+        'auto',
+        {
+          log,
+        },
+      );
+      return { seen, log };
+    }
+    const body = () => new Response(new Uint8Array(PYPI_SPEED_SAMPLE_BYTES), { status: 206 });
+
+    it('uses the aliyun mirror when it answers and PyPI does not', async () => {
+      const { seen, log } = await autoInstall(async (url) => {
+        if (url.includes('files.pythonhosted.org')) throw new Error('ETIMEDOUT');
+        return body();
+      });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toContain(`url = "https://mirrors.aliyun.com/pypi/${WHEEL}"`);
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('PyPI speed check'));
+    });
+
+    it('stays on PyPI when the mirror does not answer', async () => {
+      const { seen } = await autoInstall(async (url) => {
+        if (url.includes('mirrors.aliyun.com')) throw new Error('ECONNREFUSED');
+        return body();
+      });
+      expect(seen).toEqual([SAMPLED]);
+    });
+  });
+
   it('retries once from the original URLs when the mirrored sync fails', async () => {
     const { bundle, project } = await lockedFixture();
     const { run, seen } = recordingRun(project, 1);
@@ -1093,5 +1531,226 @@ describe('regional PyPI mirror for the frozen sync (#3444)', () => {
     expect(await runtimeCompatible(bundle, project)).toBe(true);
     await writeFile(join(project, 'uv.lock'), LOCK.replace('sha256:e943', 'sha256:0000'));
     expect(await runtimeCompatible(bundle, project)).toBe(false);
+  });
+});
+
+describe('multi-connection download of large locked wheels (#3411)', () => {
+  const data = Buffer.alloc(PREFETCH_MIN_BYTES + 5, 7);
+  const digest = createHash('sha256').update(data).digest('hex');
+  const URL_ =
+    'https://download-r2.pytorch.org/whl/cu128/torch-2.8.0%2Bcu128-cp311-cp311-win_amd64.whl';
+  const LOCK = [
+    '[[package]]',
+    'name = "torch"',
+    'version = "2.8.0+cu128"',
+    'source = { registry = "https://download.pytorch.org/whl/cu128" }',
+    'wheels = [',
+    `    { url = "${URL_}", hash = "sha256:${digest}", upload-time = "2025-10-01T23:49:30Z" },`,
+    ']',
+    '',
+  ].join('\n');
+  const DRY_RUN = [
+    'Using CPython 3.11.16 interpreter at: C:\\rt\\.python\\python.exe',
+    'DEBUG Identified uncached distribution: torch==2.8.0+cu128',
+  ].join('\n');
+
+  function transportFor(fail: boolean): RangeTransport {
+    return async (url, start, end) => {
+      if (fail) throw new RangeUnsupportedError(url);
+      return (async function* () {
+        yield data.subarray(start, end + 1);
+      })();
+    };
+  }
+
+  async function install(fail = false) {
+    forcePlatform('win32');
+    vi.spyOn(process, 'arch', 'get').mockReturnValue('x64');
+    vi.mocked(httpsRangeTransport).mockReturnValue({
+      transport: transportFor(fail),
+      probeSize: async () => data.length,
+      close: () => undefined,
+    });
+    const { bundle, project } = await fixture();
+    await writeFile(join(bundle, 'uv.lock'), LOCK);
+    const seen: string[] = [];
+    const planning: Array<{ timeoutMs: number; quiet?: boolean } | undefined> = [];
+    const run = vi.fn(
+      async (
+        _command: string,
+        args: string[],
+        _cwd: string,
+        _env?: NodeJS.ProcessEnv,
+        options?: { timeoutMs: number; quiet?: boolean },
+      ) => {
+        if (args[0] === '-v' && args.includes('--dry-run')) {
+          planning.push(options);
+          return DRY_RUN;
+        }
+        if (args[0] !== 'sync') return undefined;
+        seen.push(await readFile(join(project, 'uv.lock'), 'utf8'));
+        await interpreter(project);
+        return undefined;
+      },
+    );
+    const transfer = vi.fn();
+    const log = vi.fn();
+    await installRuntime(
+      bundle,
+      project,
+      'uv',
+      run,
+      new AbortController().signal,
+      undefined,
+      'global',
+      { transfer, log },
+    );
+    return { bundle, project, seen, planning, transfer, log };
+  }
+
+  it('hands uv the verified local copy, then restores the lock and frees the space', async () => {
+    const { bundle, project, seen, planning, transfer } = await install();
+    expect(planning).toEqual([expect.objectContaining({ quiet: true })]);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatch(
+      new RegExp(
+        `url = "file://[^"]+/torch-2\\.8\\.0%2Bcu128-cp311-cp311-win_amd64\\.whl", hash = "sha256:${digest}"`,
+      ),
+    );
+    expect(seen[0]).not.toContain(URL_);
+    expect(transfer).toHaveBeenLastCalledWith('torch', data.length, data.length);
+    expect(await readFile(join(project, 'uv.lock'), 'utf8')).toBe(LOCK);
+    expect(existsSync(join(project, '..', '.wheel-prefetch'))).toBe(false);
+    expect(await runtimeReady(bundle, project)).toBe(true);
+  });
+
+  it('leaves the wheel to uv when the fast download fails', async () => {
+    const { seen, log } = await install(true);
+    expect(seen).toEqual([LOCK]);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('uv will download it instead'));
+  });
+
+  it('lets uv download the wheel itself when it cannot use the local copy', async () => {
+    forcePlatform('win32');
+    vi.spyOn(process, 'arch', 'get').mockReturnValue('x64');
+    vi.mocked(httpsRangeTransport).mockReturnValue({
+      transport: transportFor(false),
+      probeSize: async () => data.length,
+      close: () => undefined,
+    });
+    const { bundle, project } = await fixture();
+    await writeFile(join(bundle, 'uv.lock'), LOCK);
+    const seen: string[] = [];
+    const run = vi.fn(async (_command: string, args: string[]) => {
+      if (args[0] === '-v') return DRY_RUN;
+      if (args[0] !== 'sync') return undefined;
+      const lock = await readFile(join(project, 'uv.lock'), 'utf8');
+      seen.push(lock);
+      if (lock.includes('file://')) throw new Error('Runtime setup exited with code 2');
+      await interpreter(project);
+      return undefined;
+    });
+    await installRuntime(
+      bundle,
+      project,
+      'uv',
+      run,
+      new AbortController().signal,
+      undefined,
+      'global',
+    );
+    expect(seen).toHaveLength(2);
+    expect(seen[1]).toBe(LOCK);
+    expect(await runtimeReady(bundle, project)).toBe(true);
+  });
+
+  it('can be turned off with OMNIVOICE_SETUP_CONNECTIONS=1', async () => {
+    vi.stubEnv('OMNIVOICE_SETUP_CONNECTIONS', '1');
+    const { seen, planning } = await install();
+    expect(planning).toEqual([]);
+    expect(seen).toEqual([LOCK]);
+  });
+});
+
+describe('outdated Visual C++ runtime behind a native import crash (#3293)', () => {
+  const crash = () =>
+    Object.assign(new Error('Runtime setup exited with code 3221225477'), {
+      code: 3221225477,
+      stdout: 'VOICESTUDIO_IMPORT=fastapi\nVOICESTUDIO_IMPORT=sentencepiece\n',
+    });
+  const diagnosis = (version: string) =>
+    `${NATIVE_DIAGNOSTIC_PREFIX}${JSON.stringify({
+      missing_system_libraries: [],
+      extension_present: true,
+      msvcp140: { path: 'C:\\Windows\\System32\\MSVCP140.dll', version },
+    })}\n`;
+  function runner(version: string, failure: () => Error) {
+    return vi.fn(async (_command: string, args: string[]) => {
+      if (args[0] !== '-c') return undefined;
+      if (args[1] === RUNTIME_IMPORT_PROBE) throw failure();
+      if (args[1] === RUNTIME_NATIVE_DIAGNOSTIC_PROBE) return diagnosis(version);
+      return undefined;
+    });
+  }
+
+  it('compares MSVCP140 versions against the 14.40 floor', () => {
+    expect(msvcp140Outdated('14.29.30133.0')).toBe(true);
+    expect(msvcp140Outdated('14.36.32532.0')).toBe(true);
+    expect(msvcp140Outdated('14.40.33810.0')).toBe(false);
+    expect(msvcp140Outdated('14.44.35211.0')).toBe(false);
+    expect(msvcp140Outdated(undefined)).toBe(false);
+    expect(msvcp140Outdated('garbage')).toBe(false);
+  });
+
+  it('reads the loaded MSVCP140 from the diagnostic and tolerates its absence', () => {
+    expect(parseNativeDiagnosis(diagnosis('14.29.30133.0'))?.msvcp140).toEqual({
+      path: 'C:\\Windows\\System32\\MSVCP140.dll',
+      version: '14.29.30133.0',
+    });
+    expect(
+      parseNativeDiagnosis(
+        `${NATIVE_DIAGNOSTIC_PREFIX}${JSON.stringify({ missing_system_libraries: [] })}`,
+      )?.msvcp140,
+    ).toBeNull();
+    expect(RUNTIME_NATIVE_DIAGNOSTIC_PROBE).toContain('GetFileVersionInfoW');
+  });
+
+  it('explains an access violation on an outdated runtime instead of a bare exit code', async () => {
+    const { bundle, project } = await fixture();
+    const failure = installRuntime(
+      bundle,
+      project,
+      'uv',
+      runner('14.29.30133.0', crash),
+      new AbortController().signal,
+    );
+    await expect(failure).rejects.toMatchObject({ code: OUTDATED_SYSTEM_LIBRARY_CODE });
+    await expect(failure).rejects.toThrow(/"sentencepiece".*14\.29\.30133\.0.*Visual C\+\+/s);
+    expect(await runtimeReady(bundle, project)).toBe(false);
+  });
+
+  it('keeps the plain import failure when the runtime is current or the error is not a crash', async () => {
+    const current = await fixture();
+    await expect(
+      installRuntime(
+        current.bundle,
+        current.project,
+        'uv',
+        runner('14.44.35211.0', crash),
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow('the import check stopped while importing "sentencepiece"');
+    const notACrash = await fixture();
+    await expect(
+      installRuntime(
+        notACrash.bundle,
+        notACrash.project,
+        'uv',
+        runner('14.29.30133.0', () =>
+          Object.assign(new Error("No module named 'sentencepiece'"), { code: 1, stdout: '' }),
+        ),
+        new AbortController().signal,
+      ),
+    ).rejects.not.toMatchObject({ code: OUTDATED_SYSTEM_LIBRARY_CODE });
   });
 });

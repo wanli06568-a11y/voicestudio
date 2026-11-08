@@ -23,6 +23,10 @@ describe('take metadata', () => {
     });
     expect(takeSettings(item)).not.toHaveProperty('autoPlay');
   });
+  it('never restores a saved transcript edit with the take (#3358)', () => {
+    rememberTake('take', { ...DEFAULT_CLONE_SETTINGS, refText: 'Words from another voice.' });
+    expect(takeSettings(item).refText).toBe('');
+  });
   it('uses known history fields when metadata is malformed or absent', () => {
     localStorage.setItem('voicestudio.take-settings.v1', '{');
     expect(takeSettings(item)).toEqual({
@@ -30,10 +34,26 @@ describe('take metadata', () => {
       language: 'French',
       instruct: '',
       selectedProfileId: 'voice',
+      refText: '',
       emotionMode: 'none',
       emotionText: '',
       emotionAlpha: 0.6,
       emotionVector: [0, 0, 0, 0, 0, 0, 0, 0],
+      direction: '',
+    });
+  });
+  it('restores style and delivery direction separately (#3422)', () => {
+    // CosyVoice received "warm, intimate" as one instruct; the snapshot keeps both parts.
+    rememberTake('take', { ...DEFAULT_CLONE_SETTINGS, instruct: 'warm', direction: 'intimate' });
+    expect(takeSettings({ ...item, instruct: 'warm, intimate' })).toMatchObject({
+      instruct: 'warm',
+      direction: 'intimate',
+    });
+    // Legacy history without a snapshot never invents a direction.
+    localStorage.clear();
+    expect(takeSettings({ ...item, instruct: 'warm, intimate' })).toMatchObject({
+      instruct: 'warm, intimate',
+      direction: '',
     });
   });
   it.each([
@@ -165,6 +185,7 @@ describe('take metadata', () => {
       emotionText: 'quietly relieved',
       emotionAlpha: 0.4,
       emotionVector: [0.2, 0, 0, 0, 0, 0, 0, 0],
+      direction: 'nervous, then bold',
       steps: 32,
       wavBits: 24,
       effectPreset: 'raw',

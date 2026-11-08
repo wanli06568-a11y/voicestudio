@@ -6,9 +6,12 @@ import { contactAge, lastBackendContact } from '@shared/utils/backendContact';
 import { clampCrashTail } from '@shared/utils/crashReport';
 import { scrubText } from '@shared/utils/scrub';
 import { formatHostSnapshot, withDeadline } from '@shared/utils/hostSnapshot';
+import { collapseRepeatedLines, formatFailureFacts } from '@shared/utils/installFailure';
 import { describeExitCode, isNativeFaultExit } from '@shared/utils/nativeExit';
+import { formatCrashContext } from '@shared/utils/crashContext';
 import {
   _adaptLastRunCrash,
+  lastRunCrashFacts,
   type LastRunCrashRecord,
 } from '@shared/utils/runCrashRecord';
 import { getBackendStatusSnapshot } from '@/hooks/use-backend-status';
@@ -76,7 +79,7 @@ function reachabilitySection(
   return lines;
 }
 
-export function ReportBug({ error }: { error?: Error | string }) {
+export function ReportBug({ error, setup = false }: { error?: Error | string; setup?: boolean }) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -84,7 +87,30 @@ export function ReportBug({ error }: { error?: Error | string }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [summary, setSummary] = useState('');
   const [showRequired, setShowRequired] = useState(false);
+  const [hasInstallFailure, setHasInstallFailure] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const savingNow = useRef(false);
   const pending = useRef(false);
+  const saveDiagnostics = async () => {
+    const bridge = getBridge();
+    if (!bridge || savingNow.current) return;
+    savingNow.current = true;
+    setSaving(true);
+    setSaveFailed(false);
+    try {
+      const data = await bridge.backend.getSetupDiagnostics();
+      await bridge.files.saveData({
+        data: new TextEncoder().encode(data),
+        suggestedName: 'voicestudio-setup.log',
+      });
+    } catch {
+      setSaveFailed(true);
+    } finally {
+      savingNow.current = false;
+      setSaving(false);
+    }
+  };
   const report = async (skipFreshness = false, staleBuild?: KnownUpdate) => {
     if (pending.current) return;
     pending.current = true;
@@ -115,30 +141,50 @@ export function ReportBug({ error }: { error?: Error | string }) {
         popup.opener = null;
       }
       const signal = AbortSignal.timeout(2500);
-      const [system, engines, previous, nativeStatus, currentLogs, host] = await Promise.allSettled([
-        apiJson<Record<string, unknown>>('/system/info', { signal }),
-        apiJson<{ tts?: { active?: string }; asr?: { active?: string } }>('/engines', { signal }),
-        apiJson<{ record: LastRunCrashRecord | null; acknowledged: boolean }>(
-          '/system/last-run-crash',
-          { signal },
-        ),
-        bridge?.backend?.getStatus?.() ?? Promise.resolve(null),
-        error
-          ? apiJson<{ lines?: unknown[] }>('/system/logs?tail=120', { signal })
-          : Promise.resolve(null),
-        // A stalled network drive must not hold the report hostage.
-        withDeadline(bridge?.backend?.getHostSnapshot?.() ?? Promise.resolve(null), 3000),
-      ]);
+      const [system, engines, previous, nativeStatus, currentLogs, host] = await Promise.allSettled(
+        [
+          apiJson<Record<string, unknown>>('/system/info', { signal }),
+          apiJson<{ tts?: { active?: string }; asr?: { active?: string } }>('/engines', { signal }),
+          apiJson<{ record: LastRunCrashRecord | null; acknowledged: boolean }>(
+            '/system/last-run-crash',
+            { signal },
+          ),
+          bridge?.backend?.getStatus?.() ?? Promise.resolve(null),
+          error
+            ? apiJson<{ lines?: unknown[] }>('/system/logs?tail=120', { signal })
+            : Promise.resolve(null),
+          // A stalled network drive must not hold the report hostage.
+          withDeadline(bridge?.backend?.getHostSnapshot?.() ?? Promise.resolve(null), 3000),
+        ],
+      );
       const backend =
         nativeStatus.status === 'fulfilled' && nativeStatus.value
           ? nativeStatus.value
           : cachedBackend;
-      const summaryText = scrubText(summary).replace(LONE_SURROGATE, '\ufffd').replace(/\s+/g, ' ').trim();
+      const summaryText = scrubText(summary)
+        .replace(LONE_SURROGATE, '\ufffd')
+        .replace(/\s+/g, ' ')
+        .trim();
       const context = [
         `**Summary:** ${summaryText}`,
         `**App:** VoiceStudio ${__APP_VERSION__} (build ${__BUILD_COMMIT__})`,
         '**Shell:** Electron',
       ];
+      if (setup) {
+        const diagnostics = await withDeadline(
+          bridge?.backend?.getSetupDiagnostics?.().catch(() => null) ?? Promise.resolve(null),
+          3000,
+        );
+        context.push(
+          '## Runtime setup',
+          `Stage: ${backend?.stage ?? 'unknown'}`,
+          `Progress: ${JSON.stringify(backend?.setupProgress ?? {})}`,
+          'Attach the downloaded voicestudio-setup.log for the full setup history.',
+          '```',
+          clampCrashTail(scrubText(diagnostics ?? backend?.logTail.join('\n') ?? '')),
+          '```',
+        );
+      }
       if (staleBuild) {
         context.push(
           `**Build status:** OUTDATED — v${staleBuild.latest} was already available when this was filed`,
@@ -181,17 +227,19 @@ export function ReportBug({ error }: { error?: Error | string }) {
             'Stage: ' + backend.stage,
             'Managed: ' + backend.managed,
             ...(backend.exitCode != null
-              ? ['Exit code: ' + describeExitCode(backend.exitCode)]
+              ? ['Exit code: ' + describeExitCode(backend.exitCode, undefined, backend.logTail)]
               : []),
             ...(backend.exitSignal ? ['Signal: ' + backend.exitSignal] : []),
             ...(isNativeFaultExit({
               exitCode: backend.exitCode,
               signal: backend.exitSignal,
-            }) ? [t('reportBug.native_fault_cause')] : []),
+            })
+              ? [t('reportBug.native_fault_cause')]
+              : []),
             scrubText(backend.message),
             '',
             '```',
-            clampCrashTail(scrubText(backend.logTail.join('\n'))),
+            clampCrashTail(scrubText(collapseRepeatedLines(backend.logTail).join('\n'))),
             '```',
             '',
           ]
@@ -203,19 +251,13 @@ export function ReportBug({ error }: { error?: Error | string }) {
           '',
           'Detected: ' + new Date(crash.timestamp).toISOString(),
           'Version: ' + crash.version,
-          // A bare NTSTATUS is not triageable: 3221225477 and -1073741819 are
-          // the same access violation, reported differently by Node and Rust,
-          // and neither reads as a segfault (#2250). Name it, and say outright
-          // that a native fault leaves no Python traceback so nobody hunts for
-          // one that was never written.
-          'Exit code: ' + describeExitCode(crash.exitCode, t('common.unknown')),
+          'Exit code: ' + describeExitCode(crash.exitCode, t('common.unknown'), crash.logTail),
           'Signal: ' + (crash.signal ?? '—'),
           ...(isNativeFaultExit({ exitCode: crash.exitCode, signal: crash.signal })
-            ? [
-                t('reportBug.native_fault_cause'),
-              ]
+            ? [t('reportBug.native_fault_cause')]
             : []),
           'Uptime (seconds): ' + Math.round(crash.uptimeMs / 1000),
+          ...formatCrashContext(crash.context),
           '```',
           clampCrashTail(scrubText(crash.logTail.join('\n'))),
           '```',
@@ -230,6 +272,7 @@ export function ReportBug({ error }: { error?: Error | string }) {
           'Detected: ' + new Date(marker.ts * 1000).toISOString(),
           'Version: ' + marker.backend_version,
           'Uptime (seconds): ' + marker.uptime_s,
+          ...lastRunCrashFacts(previous.value.record),
           '```',
           clampCrashTail(scrubText(marker.last_stderr)),
           '```',
@@ -244,9 +287,17 @@ export function ReportBug({ error }: { error?: Error | string }) {
         const tail = clampCrashTail(scrubText(lines.join('\n')).trim(), 1000);
         if (tail) diagnosticSection.push('## Current backend log', '', '```', tail, '```', '');
       }
+      const installFailure = backend?.failure;
+      // By code point: a UTF-16 slice can split an emoji and make encodeURIComponent throw.
+      const shortSummary = Array.from(summaryText).slice(0, 100).join('');
       const url = composeBugReportUrl({
-        // By code point: a UTF-16 slice can split an emoji and make encodeURIComponent throw.
-        title: `[Bug] ${Array.from(summaryText).slice(0, 100).join('')}`,
+        title: installFailure
+          ? `[Install] ${installFailure.code}: ${shortSummary}`
+          : `[Bug] ${shortSummary}`,
+        labels: installFailure ? 'bug,install' : 'bug',
+        factsSection: installFailure
+          ? formatFailureFacts(installFailure).map((line) => scrubText(line))
+          : [],
         error,
         ctx: context.join('\n'),
         crashSection,
@@ -286,6 +337,7 @@ export function ReportBug({ error }: { error?: Error | string }) {
                   .join(''),
               );
             setShowRequired(false);
+            setHasInstallFailure(Boolean(getBridge() && getBackendStatusSnapshot()?.failure));
             setDialogOpen(true);
           }}
         >
@@ -345,9 +397,26 @@ export function ReportBug({ error }: { error?: Error | string }) {
                 {(['app', 'system', 'engines', 'logs', 'pages'] as const).map((item) => (
                   <li key={item}>{t(`reportBug.sent_${item}`)}</li>
                 ))}
+                {hasInstallFailure ? <li>{t('reportBug.sent_install_failure')}</li> : null}
               </ul>
               <p className="mt-2 text-muted-foreground">{t('reportBug.not_sent')}</p>
             </div>
+            {hasInstallFailure ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={saving}
+                onClick={() => void saveDiagnostics()}
+              >
+                {t('reportBug.save_diagnostics')}
+              </Button>
+            ) : null}
+            {saveFailed ? (
+              <p role="alert" className="text-xs text-destructive">
+                {t('reportBug.save_diagnostics_failed')}
+              </p>
+            ) : null}
             <DialogFooter>
               <DialogClose render={<Button type="button" variant="outline" />}>
                 {t('common.cancel')}

@@ -57,7 +57,10 @@ function escapeRegExp(value: string): string {
  * land on the same planned entry.
  */
 export function normalizePackageName(name: string): string {
-  return name.trim().toLowerCase().replace(/[-_.]+/g, '-');
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[-_.]+/g, '-');
 }
 
 /** Converts uv's human output into stable, renderer-safe progress data. */
@@ -122,10 +125,10 @@ export class SetupProgressTracker {
     const starting = line.match(new RegExp(`^Downloading\\s+(.+?)\\s+\\(${SIZE}\\)`, 'i'));
     if (starting) {
       const name = normalizePackageName(starting[1]);
+      if (!this.planned.has(name) || this.completed.has(name)) this.advancedAt = now;
       if (!this.labels.has(name)) this.labels.set(name, starting[1].trim());
       this.planned.set(name, parseByteSize(starting[2], starting[3]));
       this.completed.delete(name);
-      this.advancedAt = now;
       this.progress.downloadsComplete = false;
       this.refreshDownloadState();
       changed = true;
@@ -134,8 +137,8 @@ export class SetupProgressTracker {
     const finished = line.match(/^Downloaded\s+(.+?)\s*$/i);
     if (finished) {
       const name = normalizePackageName(finished[1]);
+      if (!this.completed.has(name)) this.advancedAt = now;
       this.completed.add(name);
-      this.advancedAt = now;
       const size = this.planned.get(name);
       if (size !== undefined) this.received.set(name, size);
       this.refreshDownloadState();
@@ -149,15 +152,43 @@ export class SetupProgressTracker {
       const total = parseByteSize(bytePair[3], bytePair[4]);
       const name = this.packageOnLine(line);
       if (name) {
+        if (received > (this.received.get(name) ?? 0)) this.advancedAt = now;
         this.planned.set(name, total);
         this.received.set(name, Math.min(received, total));
         this.progress.activePackage = this.labels.get(name) ?? name;
-        this.advancedAt = now;
         changed = true;
       }
     }
 
     if (!changed) return null;
+    return this.recompute(now);
+  }
+
+  /**
+   * Byte progress of a download the shell runs itself (the multi-connection
+   * wheel prefetch, #3411). `total <= 0` withdraws the package: its download
+   * failed over to uv, which announces it again.
+   */
+  observeTransfer(name: string, received: number, total: number, now = Date.now()): SetupProgress {
+    const key = normalizePackageName(name);
+    this.progress.activityUpdatedAt = now;
+    if (total <= 0) {
+      this.planned.delete(key);
+      this.received.delete(key);
+      this.completed.delete(key);
+    } else {
+      if (!this.labels.has(key)) this.labels.set(key, name.trim());
+      if (received > (this.received.get(key) ?? 0) || !this.planned.has(key)) this.advancedAt = now;
+      this.planned.set(key, total);
+      this.received.set(key, Math.min(received, total));
+      if (received >= total) this.completed.add(key);
+      else this.completed.delete(key);
+    }
+    this.refreshDownloadState();
+    return this.recompute(now);
+  }
+
+  private recompute(now: number): SetupProgress {
     this.progress.completedDownloads = this.completed.size;
     const totalBytes = [...this.planned.values()].reduce((sum, value) => sum + value, 0);
     const downloadedBytes = [...this.received.values()].reduce((sum, value) => sum + value, 0);
@@ -199,6 +230,10 @@ export class SetupProgressTracker {
 
   snapshot(now = Date.now()): SetupProgress {
     const snapshot: SetupProgress = { ...this.progress };
+    if (snapshot.transferUpdatedAt === undefined || now - snapshot.transferUpdatedAt >= 15_000) {
+      delete snapshot.bytesPerSecond;
+      delete snapshot.etaSeconds;
+    }
     const host = snapshot.activePackage
       ? this.hosts.get(normalizePackageName(snapshot.activePackage))
       : undefined;

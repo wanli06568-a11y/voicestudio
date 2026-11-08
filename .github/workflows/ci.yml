@@ -65,7 +65,15 @@ jobs:
       pull-requests: read
     outputs:
       electron: ${{ steps.detect.outputs.electron }}
+      runtime: ${{ steps.scope.outputs.runtime }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/ci_scope.py
       - id: detect
         shell: bash
         env:
@@ -112,10 +120,10 @@ jobs:
   installer:
     name: Electron installer contracts
     needs: changes
-    if: ${{ !cancelled() && needs.changes.result != 'skipped' }}
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.runtime != 'false' }}
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
@@ -143,7 +151,7 @@ jobs:
     needs: changes
     # Must report even if `changes` failed, so a detection error never skips the gate;
     # only a rejected external approval (changes skipped) stops it.
-    if: ${{ !cancelled() && needs.changes.result != 'skipped' }}
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.runtime != 'false' }}
     runs-on: ubuntu-22.04
     env:
       # Same restricted-network resilience the smoke matrix already sets. This
@@ -152,10 +160,10 @@ jobs:
       UV_HTTP_TIMEOUT: "120"
       UV_HTTP_RETRIES: "5"
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Python 3.11
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
 
@@ -200,31 +208,6 @@ jobs:
         # Backing off between whole attempts is what actually clears it.
         run: bash scripts/uv-sync-retry.sh --all-extras
 
-      # HF_HUB_OFFLINE=1 is a recurrence guard, not an optimization: a test
-      # that reaches huggingface.co fails fast and loud instead of silently
-      # downloading model weights mid-suite (the preload_model() Hub-probe
-      # bug pulled the full 2.3 GB k2-fsa/OmniVoice checkpoint into every
-      # networked empty-cache run before it was caught). All legitimate HF
-      # interactions in tests are stubbed; anything that trips this is a
-      # test-isolation bug.
-      # `-n auto` runs tests/ in parallel (one worker per CPU; 10 min serial ->
-      # ~3 min on a 4-core runner, with identical results). backend/tests/ below
-      # stays serial: one test there depends on another's leftover state and
-      # fails when run in isolation, which parallel scheduling exposes.
-      - name: Run pytest
-        run: uv run --no-sync pytest tests/ -q --tb=short -n auto
-        env:
-          HF_HUB_OFFLINE: "1"
-
-      # `backend/tests/` mounts routers on bare FastAPI apps (no heavy main
-      # import chain) with a hermetic data dir from its conftest.py. It no
-      # longer stubs sys.modules, so mixed sessions with tests/ are safe;
-      # the separate session is kept for cheaper, clearer CI output.
-      - name: Run pytest (backend/tests, isolated)
-        run: uv run --no-sync pytest backend/tests/ -q --tb=short
-        env:
-          HF_HUB_OFFLINE: "1"  # same no-silent-downloads guard as tests/
-
       # Cache ~/.bun/install/cache keyed on bun.lock — `bun install` drops
       # from ~15 s cold to near-instant on warm cache.
       - name: Cache bun deps
@@ -241,8 +224,34 @@ jobs:
         # Docker build (deploy/Dockerfile), which is what reddened main on #485.
         run: bun install --frozen-lockfile
 
-      # Mobile theme tokens are generated from the Electron theme and need its
-      # deps installed, so the pytest copy of this check skips before this point.
+      # HF_HUB_OFFLINE=1 is a recurrence guard, not an optimization: a test
+      # that reaches huggingface.co fails fast and loud instead of silently
+      # downloading model weights mid-suite (the preload_model() Hub-probe
+      # bug pulled the full 2.3 GB k2-fsa/OmniVoice checkpoint into every
+      # networked empty-cache run before it was caught). All legitimate HF
+      # interactions in tests are stubbed; anything that trips this is a
+      # test-isolation bug.
+      # `-n 6` runs tests/ in parallel. Many tests wait on subprocesses and
+      # timers, so 6 workers beat one-per-CPU on the 4-vCPU runner (measured
+      # 2026-11-08: 4 workers 467-522 s, 6 workers 416 s, 8 workers 442 s).
+      # backend/tests/ below
+      # stays serial: one test there depends on another's leftover state and
+      # fails when run in isolation, which parallel scheduling exposes.
+      - name: Run pytest
+        run: uv run --no-sync pytest tests/ -q --tb=short -n 6
+        env:
+          HF_HUB_OFFLINE: "1"
+
+      # `backend/tests/` mounts routers on bare FastAPI apps (no heavy main
+      # import chain) with a hermetic data dir from its conftest.py. It no
+      # longer stubs sys.modules, so mixed sessions with tests/ are safe;
+      # the separate session is kept for cheaper, clearer CI output.
+      - name: Run pytest (backend/tests, isolated)
+        run: uv run --no-sync pytest backend/tests/ -q --tb=short
+        env:
+          HF_HUB_OFFLINE: "1"  # same no-silent-downloads guard as tests/
+
+      # Check the generated mobile files explicitly as well as through pytest.
       - name: Mobile theme tokens match Electron
         run: bun --no-install scripts/export-mobile-tokens.ts --check
 
@@ -256,10 +265,10 @@ jobs:
   test-electron:
     name: Tests (Electron)
     needs: changes
-    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.electron != 'false' }}
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.electron != 'false' && needs.changes.outputs.runtime != 'false' }}
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node 22
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -297,7 +306,9 @@ jobs:
       # node:test suites for shared renderer modules (tests/frontend/*.test.mjs).
       # Node 22 strips TypeScript types natively; imports need explicit `.ts`.
       - name: Frontend unit tests
-        run: bun run test:frontend
+        run: |
+          node --test electron/tests/node-version.test.mjs
+          bun run test:frontend
 
       # Electron used to be built only after a release started, so renderer,
       # preload and packaging regressions could pass the required PR gate.
@@ -306,17 +317,17 @@ jobs:
         run: bun run check:electron
 
       - name: Snap artifact repair regression
-        run: node --test electron/tests/snap-artifact-verification.test.mjs electron/tests/snap-launcher.test.mjs electron/tests/snap-store-packaging.test.mjs
+        run: node --test electron/tests/snap-artifact-verification.test.mjs electron/tests/snap-launcher.test.mjs electron/tests/snap-store-packaging.test.mjs electron/tests/omnivoice-tts-bundle.test.mjs
 
   # Split from Tests (Electron) so the two ~7 minute halves run side by side.
   # The browser workflow smokes need only the checked-out sources.
   electron-smokes:
     name: Electron renderer smokes
     needs: changes
-    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.electron != 'false' }}
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.electron != 'false' && needs.changes.outputs.runtime != 'false' }}
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node 22
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -361,8 +372,10 @@ jobs:
           export OMNIVOICE_PORT=3999
           export VOICESTUDIO_UI_URL=http://localhost:3912
           export PLAYWRIGHT_CHANNEL=chromium
-          export HF_HUB_OFFLINE=1
-          export HF_HUB_CACHE="$(mktemp -d)"
+          # Smokes run with the Hugging Face hub offline, caching into a throwaway directory
+          # so neither the network nor the runner's real model cache is ever involved.
+          smoke_hub_cache=$(mktemp -d)
+          export HF_HUB_CACHE="$smoke_hub_cache" HF_HUB_OFFLINE=1
           bun run --cwd electron smoke:server > /tmp/voicestudio-electron-smoke.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
@@ -390,6 +403,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
+      RUNTIME_NEEDED: ${{ needs.changes.outputs.runtime }}
+      CHANGES_RESULT: ${{ needs.changes.result }}
       PYTHON: ${{ needs.test-python.result }}
       ELECTRON: ${{ needs.test-electron.result }}
       SMOKES: ${{ needs.electron-smokes.result }}
@@ -398,6 +413,13 @@ jobs:
       - name: Both test jobs passed
         run: |
           echo "Python: $PYTHON, Electron: $ELECTRON, smokes: $SMOKES (needed: $ELECTRON_NEEDED)"
+          if [ "$RUNTIME_NEEDED" = false ] && [ "$CHANGES_RESULT" = success ]; then
+            for result in "$PYTHON" "$ELECTRON" "$SMOKES"; do
+              [ "$result" = skipped ] || exit 1
+            done
+            echo "Documentation/test-only change: runtime CI skipped."
+            exit 0
+          fi
           [ "$PYTHON" = success ] || exit 1
           # Skipped is only acceptable when change detection said nothing in this
           # PR can affect the Electron jobs.
@@ -414,7 +436,7 @@ jobs:
   ui-crawler:
     name: UI crawler (${{ matrix.shard }}/3)
     needs: changes
-    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.electron != 'false' }}
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.electron != 'false' && needs.changes.outputs.runtime != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
@@ -422,7 +444,7 @@ jobs:
       matrix:
         shard: [1, 2, 3]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node 22
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -472,10 +494,10 @@ jobs:
   linux-native-package:
     name: Linux native package
     needs: changes
-    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.electron != 'false' }}
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.electron != 'false' && needs.changes.outputs.runtime != 'false' }}
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
@@ -503,7 +525,7 @@ jobs:
   electron-ui:
     name: Desktop UI (${{ matrix.label }})
     needs: changes
-    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.electron != 'false' }}
+    if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.electron != 'false' && needs.changes.outputs.runtime != 'false' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -517,7 +539,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Node 22
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -540,9 +562,9 @@ jobs:
       - name: Install Electron deps
         run: bun install --frozen-lockfile
 
-      - name: Development launcher tests
+      - name: Development launcher and install doctor tests
         working-directory: electron
-        run: bunx --no-install vp test --run src/main/dev-bundle.test.ts src/main/dev-instance.test.ts
+        run: bunx --no-install vp test --run src/main/dev-bundle.test.ts src/main/dev-instance.test.ts src/main/install-doctor.test.ts
 
       - name: Build Electron app
         run: bun run --cwd electron build
@@ -588,11 +610,14 @@ jobs:
     # After the Python tests (the fast-failing half), not the whole test gate: waiting for
     # the Electron jobs too left these 1-4 minute jobs idle for ~9 minutes of every run.
     needs: test-python
+    # Internal approval is intentionally skipped; override implicit success()
+    # so that skipped ancestor does not silently skip these code checks too.
+    if: ${{ !cancelled() && needs.test-python.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             label: macOS
             backend_supported: true
           - os: macos-15-intel
@@ -627,10 +652,10 @@ jobs:
       UV_HTTP_TIMEOUT: "120"
       UV_HTTP_RETRIES: "5"
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Python 3.11
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
 

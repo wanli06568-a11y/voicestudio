@@ -125,6 +125,7 @@ def test_whole_file_dub_preserves_unknown_or_explicit_source(tmp_path, monkeypat
     monkeypatch.setattr(dc, 'get_diarization_pipeline', lambda: None)
     monkeypatch.setattr(dc, 'release_device_cache', lambda: None)
     monkeypatch.setattr(dc, 'snap_segment_starts', lambda *a, **k: None)
+    monkeypatch.setattr(dc, 'trim_segment_ends', lambda *a, **k: None)
     monkeypatch.setattr(dc.sf, 'read', lambda *a, **k: (np.zeros(32000), 16000))
     monkeypatch.setattr(m.ab, 'asr_model_missing_error', lambda *a, **k: None)
     transcript = {'chunks': [{'text': 'Goedemorgen', 'timestamp': (0, 2)}], 'language': None}
@@ -184,6 +185,22 @@ def test_unknown_dub_detection_never_becomes_english(value):
 def test_known_source_language_codes_are_retained(value, expected):
     from api.routers.dub_core import _detected_source_lang
     assert _detected_source_lang(value) == expected
+
+
+def test_unknown_caption_language_asks_instead_of_using_english(monkeypatch):
+    from api.routers import dub_core as dc
+    from api.routers import dub_translate as dt
+    job = {
+        'duration': 2, 'source_lang': None, 'transcription_complete': True, 'segments': [],
+        'youtube_subs': {'pam': [{'start': 0, 'end': 2, 'text': 'Mayap a abak'}]},
+    }
+    monkeypatch.setattr(dc, '_get_job', lambda _: job)
+    monkeypatch.setattr(dt, '_get_job', lambda _: job)
+    monkeypatch.setattr(dc, '_save_job', lambda *args: None)
+    dc.dub_use_downloaded_captions('job')
+    assert job['source_lang_detection_missing'] is True
+    request = SimpleNamespace(source_lang=None, job_id='job', segments=[])
+    assert dt._resolve_source_lang(request) is None
 
 
 @pytest.mark.parametrize('kind, expected', [('srt', 'en'), ('captions', 'nl')])

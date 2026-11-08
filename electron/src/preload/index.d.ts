@@ -1,4 +1,6 @@
+import type { CrashContext } from '../shared/utils/crashContext';
 import type { HostSnapshotLike } from '../shared/utils/hostSnapshot';
+import type { InstallFailure } from '../shared/utils/installFailure';
 /**
  * The contextBridge surface exposed to the renderer as `window.voicestudio`.
  *
@@ -25,18 +27,31 @@ export interface NativeCrashRecord {
   signal: string | null;
   uptimeMs: number;
   logTail: string[];
+  /** The backend's last reported activity and free memory. */
+  context?: CrashContext;
   /** Viewing or dismissing a crash marks it seen while retaining evidence for reports. */
   acknowledged: boolean;
 }
 export interface BackendStatus {
   lastCrash?: NativeCrashRecord;
+  /** The CUDA download failed or stuck, and the smaller CPU build could get past it. */
+  cpuSetupAvailable?: boolean;
+  /** Set on the setup screen when Windows Smart App Control may block the engine. */
+  smartAppControlWarning?: boolean;
+  /** OMNIVOICE_ANALYTICS_DISABLED is set: nothing may be sent, whatever was chosen. */
+  analyticsDisabled?: boolean;
+  /** Code and facts for the current install or startup failure. */
+  failure?: InstallFailure;
   stage: BackendStage;
   setupIssue?:
     | 'space'
     | 'access'
     | 'unsupported_platform'
     | 'wrong_architecture'
-    | 'missing_system_library';
+    | 'missing_system_library'
+    | 'outdated_system_library'
+    | 'files_locked'
+    | 'install_stuck';
   /** Free disk (GiB) the failed install needed; the CPU-only install needs less than the CUDA one. */
   setupRequiredGib?: number;
   /** A prior explicit install stopped after creating its resumable project/cache. */
@@ -307,7 +322,14 @@ export interface UninstallTarget {
   shared: boolean;
 }
 
+export interface AccountSignInOptions {
+  /** `signup` opens the dashboard on account creation; `login` (default) on sign-in. */
+  intent: 'login' | 'signup';
+}
+
 export interface AccountPublicState {
+  /** The signed-in account's ID; token presence alone does not count as signed in. */
+  accountId?: string | null;
   available: boolean;
   accountEnabled: boolean;
   syncEnabled: boolean;
@@ -336,6 +358,8 @@ export interface AccountPublicState {
   plan: {
     planCode: string;
     planName: string;
+    /** Where the plan comes from (for example `default`, a purchase or a grant). */
+    planOrigin: string;
     /** When the plan ends (a yearly plan or a grant); null for no end. */
     planEndsAt: string | null;
     storageUsedBytes: number;
@@ -344,15 +368,27 @@ export interface AccountPublicState {
     settingsSync: boolean | null;
     proDesktop: boolean | null;
   } | null;
-  /** Dashboard pages for managing the profile and the plan; null when signed out. */
-  links: { profile: string; plan: string } | null;
+  /** Dashboard pages for the profile, the plan and account deletion; null when signed out. */
+  links: { profile: string; plan: string; deletion: string } | null;
+}
+
+export interface SetupConnectionCheck {
+  status: 'ok' | 'failed' | 'unavailable';
+  host?: string;
+  bytes?: number;
+  elapsedMs?: number;
+  bytesPerSecond?: number;
+  error?: string;
+  checkedAt: number;
 }
 
 export interface VoiceStudioBridge {
   /** VoiceStudio Cloud account; never carries a token. */
   account: {
     get(): Promise<AccountPublicState>;
-    signIn(): Promise<void>;
+    /** Reload profile, plan and photo, then notify every open window. */
+    refresh(): Promise<AccountPublicState>;
+    signIn(options?: AccountSignInOptions): Promise<void>;
     cancelSignIn(): Promise<void>;
     signOut(): Promise<void>;
     setSwitches(patch: {
@@ -424,11 +460,14 @@ export interface VoiceStudioBridge {
     restart(): Promise<void>;
     setupRuntime(): Promise<void>;
     cleanSetupRuntime(): Promise<void>;
+    setupRuntimeOnCpu(): Promise<void>;
     setRuntimeRegion(region: RuntimeRegion): Promise<RuntimeRegion>;
     chooseRuntimeLocation(title: string): Promise<RuntimeLocation | null>;
     useDefaultRuntimeLocation(): Promise<RuntimeLocation>;
     getConnection(): Promise<BackendConnection>;
     getHostSnapshot(): Promise<HostSnapshotLike>;
+    getSetupDiagnostics(): Promise<string>;
+    checkSetupConnection(): Promise<SetupConnectionCheck>;
     testRemote(input: { url: string; apiKey: string }): Promise<RemoteBackendProbe>;
     useRemote(input: { url: string; apiKey: string }): Promise<RemoteBackendProbe>;
     useLocal(): Promise<BackendConnection>;
@@ -474,6 +513,7 @@ export interface VoiceStudioBridge {
     authorizeMediaTool(kind: 'ffmpeg' | 'ffprobe'): Promise<AuthorizedPathSelection | null>;
     /** Authorize a chosen model cache directory, or the platform default when reset is true. */
     authorizeModelsDirectory(reset?: boolean): Promise<AuthorizedPathSelection | null>;
+    chooseEngineModelDirectory(engineId: 'omnivoice' | 'mlx-audio'): Promise<AuthorizedPathSelection | null>;
     extractScript(input: { name: string; data: Uint8Array }): Promise<string>;
     /** Native "Save as…" for a generated take: main fetches the URL and writes the file. */
     saveAudio(req: SaveAudioRequest): Promise<SaveAudioResult>;

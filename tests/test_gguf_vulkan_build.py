@@ -68,12 +68,17 @@ export PATH="$PWD/fake-bin:/usr/bin:/bin"
 export CMAKE_LOG="$PWD/cmake.log" VULKAN_ATTEMPT="$PWD/vulkan-attempt" FAILED="$PWD/failed"
 bash scripts/build-omnivoice-tts.sh --platform "$PLATFORM" --commit-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 ''')
-    env = {**os.environ, "MODE": mode, "PLATFORM": platform}
+    msvc = tmp_path / "msvc"
+    msvc.mkdir()
+    for dll in ("msvcp140.dll", "vcruntime140.dll"):
+        (msvc / dll).write_text("crt")
+    env = {**os.environ, "MODE": mode, "PLATFORM": platform,
+           "OMNIVOICE_MSVC_RUNTIME_DIR": msvc.as_posix()}
     result = subprocess.run([BASH, launcher.as_posix()], env=env,
                             capture_output=True, text=True, timeout=30,
                             check=False)
     assert result.returncode == 0, result.stdout + result.stderr
-    log = (tmp_path / "cmake.log").read_text()
+    log = (tmp_path / "cmake.log").read_text(encoding="utf-8")
     if mode == "absent":
         assert "GGML_VULKAN=ON" not in log
     elif mode == "success":
@@ -88,3 +93,11 @@ bash scripts/build-omnivoice-tts.sh --platform "$PLATFORM" --commit-sha aaaaaaaa
     else:
         assert "GGML_VULKAN=ON" in log
         assert log.count("-DCMAKE_BUILD_TYPE=Release") == 2
+
+
+def test_header_probe_cannot_lose_a_race_with_the_compiler():
+    """`printf | c++` under pipefail failed when c++ exited before reading (#3787 CI)."""
+    probe = (REPO / "scripts/lib/omnivoice-vulkan.sh").read_text(encoding="utf-8")
+    code = "\n".join(line for line in probe.splitlines() if not line.lstrip().startswith("#"))
+    assert "| c++" not in code and "|\n            c++" not in code
+    assert "c++ -fsyntax-only -x c++ -" in code and "<<<" in code

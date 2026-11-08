@@ -103,11 +103,11 @@ const button = (name: string) =>
 async function click(element: HTMLElement) {
   await act(async () => element.click());
 }
-async function render(licenseInfo = info) {
+async function render(licenseInfo = info, dependencies?: any[]) {
   await act(async () =>
     root.render(
       <QueryClientProvider client={queryClient}>
-        <ModelLicense repoId="test/model" label="Test model" info={licenseInfo} />
+        <ModelLicense repoId="test/model" label="Test model" info={licenseInfo} dependencies={dependencies} />
       </QueryClientProvider>,
     ),
   );
@@ -132,26 +132,57 @@ afterEach(async () => {
 
 describe('versioned model notices', () => {
   it.each([
-    ['commercial', 'unreviewed', en.modelLicense.categoryCommercial, en.modelLicense.notReviewed],
-    ['conditions', 'unreviewed', en.modelLicense.categoryConditions, en.modelLicense.notReviewed],
+    [
+      'commercial',
+      'unreviewed',
+      en.modelLicense.categoryCommercial,
+      en.modelLicense.notReviewed,
+      en.modelLicense.shortCommercial,
+    ],
+    [
+      'conditions',
+      'unreviewed',
+      en.modelLicense.categoryConditions,
+      en.modelLicense.notReviewed,
+      en.modelLicense.shortConditions,
+    ],
     [
       'noncommercial',
       'noncommercial',
       en.modelLicense.categoryNoncommercial,
       en.modelLicense.notReviewed,
+      en.modelLicense.shortNoncommercial,
     ],
-    ['commercial', 'cleared', en.modelLicense.categoryCommercial, en.modelLicense.reviewed],
-    [undefined, 'unreviewed', en.modelLicense.categoryUnknown, en.modelLicense.notReviewed],
-    ['permitted', 'unreviewed', en.modelLicense.categoryUnknown, en.modelLicense.notReviewed],
+    [
+      'commercial',
+      'cleared',
+      en.modelLicense.categoryCommercial,
+      en.modelLicense.reviewed,
+      en.modelLicense.shortCommercial,
+    ],
+    [
+      undefined,
+      'unreviewed',
+      en.modelLicense.categoryUnknown,
+      en.modelLicense.notReviewed,
+      en.modelLicense.shortUnknown,
+    ],
+    [
+      'permitted',
+      'unreviewed',
+      en.modelLicense.categoryUnknown,
+      en.modelLicense.notReviewed,
+      en.modelLicense.shortUnknown,
+    ],
   ])(
-    'shows a Licence: icon %s/%s trigger named by licence, category and review state',
-    async (category, review, categoryLabel, reviewLabel) => {
+    'shows an icon-and-text %s/%s trigger named by licence, category and review state',
+    async (category, review, categoryLabel, reviewLabel, shortLabel) => {
       await render({ ...info, license_category: category, review_status: review });
       const summary = `${info.license} · ${categoryLabel} · ${reviewLabel}`;
       const trigger = within(host).getByRole('button', {
         name: `${en.modelLicense.label}: ${summary}; Test model`,
       });
-      expect(trigger.textContent).toBe(`${en.modelLicense.label}:`);
+      expect(trigger.textContent).toBe(shortLabel);
       expect(trigger.getAttribute('title')).toBe(summary);
       const svg = trigger.querySelector('svg')!;
       expect(svg.getAttribute('aria-hidden')).toBe('true');
@@ -212,6 +243,21 @@ describe('versioned model notices', () => {
       ...acceptance,
     },
     history,
+  });
+
+  it('keeps a dependency unacceptable until its terms have loaded', async () => {
+    const dep = { repo_id: 'dep/model', license: 'x', category: 'noncommercial', required: true, accepted: false, fingerprint };
+    mock.details.mockImplementation((path: string) =>
+      path.includes('dep/model')
+        ? Promise.reject(new Error('down'))
+        : Promise.resolve(details({ accepted: true, state: 'accepted' })),
+    );
+    await render(info, [dep]);
+    await open();
+    await vi.waitFor(() => expect(text()).toContain(en.modelLicense.detailsFailed));
+    const box = document.querySelector('[role="dialog"] input[type="checkbox"]') as HTMLInputElement;
+    expect(box.disabled).toBe(true);
+    expect(button(en.modelLicense.accept).disabled).toBe(true);
   });
 
   it('records acceptance through one checkbox and shows the stored time and hash', async () => {

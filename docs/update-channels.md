@@ -40,6 +40,18 @@ only enables **Restart to update** after the package has downloaded and passed
 the updater's checksum verification, and blocks that restart until active work
 has finished and current drafts are flushed.
 
+Updates download only the parts of the installer that changed when they can,
+and the full installer otherwise; the app picks automatically and checks the
+result the same way either way. The size shown is the full installer for your
+platform; a patch download finishes early.
+
+| Install | Patch updates |
+|---|---|
+| Windows | Yes, from the first update |
+| macOS | From the second update: the first one after installing from the DMG downloads in full |
+| Linux AppImage | Yes |
+| Linux `.deb` | No: install the newer `.deb` |
+
 There are **no accounts or updater telemetry**. A check fetches one small
 platform/architecture-specific manifest from
 `github.com/debpalash/VoiceStudio/releases/latest/download/` (Stable), or, on
@@ -63,8 +75,8 @@ database schema upgrade, VoiceStudio:
 1. **Backs up the database first** — a consistent snapshot is written next to
    it as `omnivoice.db.backup-<version>-<n>` before any migration runs. The
    newest **3** backups are kept; older ones are pruned automatically.
-   A snapshot interrupted mid-copy leaves a `.part-<pid>` file that is never
-   treated as a backup and is removed on the next snapshot.
+   An interrupted copy leaves a `.part-<pid>` temporary file. Partial files are
+   never shown as backups, and the next snapshot removes abandoned ones.
    (Databases over 500 MB skip the snapshot, with a log line saying so.)
 2. **Stops instead of guessing** — if a migration fails midway, the app does
    *not* start on a half-migrated database and does *not* silently restore

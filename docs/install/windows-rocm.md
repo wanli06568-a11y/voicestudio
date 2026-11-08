@@ -3,8 +3,12 @@
 VoiceStudio can install AMD's matched native Windows stack when you explicitly
 set `OMNIVOICE_TORCH_VARIANT=rocm`. Source setup and Electron use the same
 checked-in [recipe](../../scripts/windows-rocm-recipe.json) and installer.
-The default Windows setup remains CUDA on NVIDIA, otherwise CPU. This option
-does not enable the Ryzen AI NPU, install a graphics driver, or download models.
+The default Windows setup remains CUDA on NVIDIA, otherwise CPU, so a Radeon
+(including the RX 9070 / 9070 XT and RX 9060, `gfx1201`/`gfx1200`) runs PyTorch
+engines on the CPU until you opt in here; the setup screen's GPU check and
+**Settings → Performance → GPU acceleration** say so and name this opt-in. This
+option does not enable the Ryzen AI NPU, install a graphics driver, or download
+models.
 
 ## Prerequisites and exact scope
 
@@ -116,7 +120,9 @@ inference are reported as different scopes.
 | Faster-whisper, including the crash-isolated worker | GPU is admitted only for the pinned HIP binary plus bounded local verification; CPU overrides remain effective. Auto selection can prefer this verified basic-ASR path. |
 | WhisperX, pyannote speaker detection, wav2vec2 GPU alignment | GPU execution is gated before imports/cached pipelines: MIOpen Unicode-path and SDK-header compatibility is unverified. Choose CPU in Settings → Performance (`OMNIVOICE_DEVICE=cpu`) to use these pipelines. |
 | Unavailable forced alignment | Keeps the transcript and native word timestamps; alignment precision can be lower. It does not discard requested speech or translation content. |
-| Optional engine sidecars | Separate environments and compatibility. Main readiness never certifies them. |
+| PyTorch engines in the main environment (PyTorch Whisper, and in-process VoxCPM2, MOSS-TTS-Nano and CosyVoice) | A HIP Torch build exposes AMD devices through `torch.cuda`. Actual support depends on the engine and GPU. |
+| FunASR and NeMo Parakeet | Windows ROCm support is unverified; these engines do not claim ROCm routing on Windows. Choose CPU in Settings → Performance when needed. |
+| Optional engine sidecars | Separate environments and compatibility. Main readiness never certifies them. A CUDA or CPU wheel routes to CPU on an AMD host. Routing stays unknown when GPU execution has not been verified, since a HIP build alone does not certify a particular GPU. |
 
 IndexTTS keeps its Python 3.10/3.11 requirement; CosyVoice keeps Torch 2.7;
 VoxCPM2 keeps Torch 2.11. The cp312/Torch 2.9 recipe is **not** applied to these
@@ -136,6 +142,10 @@ fully quit and relaunch with the same opt-in, then resume/retry setup. Strict
 verification distinguishes an interrupted or incompatible install from a
 working one; repair does not overlay the project's locked CUDA packages onto a
 healthy HIP environment. Failed installs remain retryable and preserve user data.
+
+Once setup finishes in the installed app, the choice is saved in
+`%USERPROFILE%\.config\omnivoice\env`, so later launches keep ROCm without the
+variable. Finishing setup with another choice removes it.
 
 To return to the supported CPU path, fully quit and choose CPU explicitly:
 

@@ -26,7 +26,7 @@ from pathlib import Path
 # tests/test_app_version.py::test_all_version_files_in_lockstep and bumped by
 # the owner-approved release bump, so it stays equal to
 # pyproject.toml and the root package.json.
-_FALLBACK_VERSION = "0.5.7"
+_FALLBACK_VERSION = "0.5.8"
 
 
 def _fallback_version() -> str:
@@ -73,7 +73,7 @@ def build_commit() -> str:
             candidates.append(
                 subprocess.run(
                     ["git", "rev-parse", "HEAD"], cwd=root, capture_output=True,
-                    text=True, timeout=5, check=False,
+                    text=True, errors="replace", timeout=5, check=False,
                 ).stdout
             )
         except (OSError, subprocess.SubprocessError):

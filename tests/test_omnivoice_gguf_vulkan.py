@@ -13,15 +13,17 @@ def gguf():
     return importlib.import_module("engines.omnivoice_gguf.backend")
 
 
-def test_loader_presence_does_not_prove_engine_acceleration():
-    """A loader cannot establish that an executable can use a physical GPU."""
+def test_vulkan_loader_without_a_gpu_keeps_cpu_routing():
     from core.device_caps import HostCaps
     from services.engine_routing import resolve_routing
 
-    caps = HostCaps(family="cpu", available_families=("cpu",),
-                    notes=("Vulkan runtime present",))
-    result = resolve_routing(("cuda", "vulkan", "mps", "cpu"), caps)
-    assert result["effective_device"] == "cpu"
+    caps = HostCaps(
+        family="cpu",
+        available_families=("cpu",),
+        notes=("Vulkan runtime loader detected; no compatible GPU family found",),
+    )
+    route = resolve_routing(("cuda", "vulkan", "mps", "cpu"), caps)
+    assert route["effective_device"] == "cpu"
 
 
 def test_pinned_cli_does_not_receive_unsupported_compute_flags(monkeypatch, tmp_path, gguf):
@@ -114,3 +116,27 @@ def test_auto_preserves_native_selection(monkeypatch, gguf):
 def test_native_compatibility_retains_gpu_capability(gguf):
     """Conservative metadata does not remove native GPU support."""
     assert gguf.OmniVoiceGGUFBackend.gpu_compat == ("cuda", "vulkan", "mps", "cpu")
+
+
+@pytest.mark.parametrize("label,expected", [
+    ("Arabic", "arb"), ("ar", "arb"), ("Kurdish", "kmr"), ("ku", "kmr"),
+    ("Chinese (Simplified)", "zh"), ("Chinese (Traditional)", "zh"),
+    ("Uyghur", "ug"), ("Haitian Creole", "ht"),
+])
+def test_gguf_lang_arg_resolves_app_picker_aliases(monkeypatch, tmp_path, gguf, label, expected):
+    """Picker labels the binary cannot resolve must reach ``--lang`` as IDs (#3692)."""
+    with patch.object(gguf, "_binary_path", return_value=tmp_path / "tts"):
+        argv = gguf.OmniVoiceGGUFBackend()._build_argv(
+            base=Path("model.gguf"), tokenizer=Path("codec.gguf"),
+            out_path=Path("out.wav"), ref_audio=None, ref_text=None, language=label)
+    assert argv[argv.index("--lang") + 1] == expected
+
+
+def test_gguf_lang_arg_keeps_plain_iso_mapping(gguf):
+    assert gguf._iso_to_omnivoice_lang("fr") == "French"
+    assert gguf._iso_to_omnivoice_lang("auto") is None
+
+
+def test_gguf_lang_arg_keeps_ids_already_valid(gguf):
+    assert gguf._iso_to_omnivoice_lang("ht") == "ht"
+    assert gguf._iso_to_omnivoice_lang("ug") == "ug"

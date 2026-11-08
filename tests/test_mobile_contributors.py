@@ -12,18 +12,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.mark.skipif(shutil.which("bun") is None, reason="needs bun")
 def test_mobile_maintainer_catalog_matches_desktop():
-    result = subprocess.run(['bun', 'scripts/export-mobile-contributors.ts', '--check'], cwd=ROOT, capture_output=True, text=True, timeout=60)
+    # The resolved path, not 'bun': Windows npm installs only ship bun.cmd.
+    result = subprocess.run([shutil.which('bun'), 'scripts/export-mobile-contributors.ts', '--check'], cwd=ROOT, capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
 
 
 def test_mobile_maintainer_catalog_is_localized():
-    cards = json.loads((ROOT / 'mobile/contract/maintainer-cards.json').read_text())
+    cards = json.loads((ROOT / 'mobile/contract/maintainer-cards.json').read_text(encoding="utf-8"))
     assert set(cards) == {'debpalash', 'velixio'}
     for card in cards.values():
         assert [link['kind'] for link in card['links']] == ['website', 'github', 'x']
         assert all(link['href'].startswith('https://') for link in card['links'])
         for path in (ROOT / 'electron/src/renderer/src/i18n/locales').glob('*.json'):
-            locale = json.loads(path.read_text())
+            locale = json.loads(path.read_text(encoding="utf-8"))
             for key in [card['name'], card['role'], 'homeUi.website', 'homeUi.follow', 'common.close']:
                 value = locale
                 for part in key.split('.'):
@@ -38,7 +39,7 @@ def test_native_brand_icons_are_generated_from_desktop(tmp_path):
     for kind, path in generator['brand_paths'](ROOT).items():
         name = {'github': 'ContributorGitHub', 'x': 'ContributorX'}[kind]
         image = tmp_path / 'ios' / (name + '.imageset')
-        metadata = json.loads((image / 'Contents.json').read_text())
+        metadata = json.loads((image / 'Contents.json').read_text(encoding="utf-8"))
         assert metadata['properties']['template-rendering-intent'] == 'template'
         svg = ET.parse(image / 'icon.svg').getroot()
         assert svg.attrib['viewBox'] == '0 0 24 24'

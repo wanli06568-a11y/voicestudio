@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { InstallProgress } from '@/components/model-install-progress';
-import { fmtBytes } from '@shared/components/settings/models/format';
+import { fmtBytes, fmtGb } from '@shared/components/settings/models/format';
 import type { CatalogueModel } from '../model-catalogue-query';
 import type { ModelOps } from './model-ops';
 import type { JobInfo } from './model-job';
@@ -21,7 +21,7 @@ export function ModelSize({ model }: { model: CatalogueModel }) {
     <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
       {model.incomplete && model.size_on_disk_bytes
         ? fmtBytes(model.size_on_disk_bytes)
-        : `${model.size_gb} GB`}
+        : fmtGb(model.size_gb)}
     </span>
   );
 }
@@ -94,8 +94,10 @@ export function ModelActions({
         <DownloadProgress model={model} ops={ops} info={info} />
       ) : model.installed ? (
         <>
-          {model.license_acceptance?.required && !model.license_acceptance.accepted ? (
-            // Downloaded but unusable until its licence is accepted.
+          {(model.license_acceptance?.required && !model.license_acceptance.accepted) ||
+          model.license_dependencies_complete === false ||
+          (model.license_dependencies ?? []).some((dependency) => dependency.required && !dependency.accepted) ? (
+            // Downloaded but unusable until every licence its engine needs is accepted (#3855).
             <span className="flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-xs text-warning">
               <TriangleAlertIcon className="size-3.5" />
               {t('modelLicense.acceptNeeded')}

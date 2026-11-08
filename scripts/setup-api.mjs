@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { assertSupportedNode } from "../electron/scripts/node-version.mjs";
 import { repairSourceNativeLibraries } from "../electron/scripts/native-compat.mjs";
 import {
   selectTorchVariant,
@@ -11,7 +12,9 @@ import {
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
+/** Validate Node, then provision the selected local Python runtime. */
 export async function setupApi({
+  nodeVersion = process.versions.node,
   env = process.env,
   platform = process.platform,
   arch = process.arch,
@@ -20,6 +23,15 @@ export async function setupApi({
   log = console.log,
   repairNativeLibraries = repairSourceNativeLibraries,
 } = {}) {
+  assertSupportedNode(nodeVersion);
+  // PyTorch publishes no Intel-Mac wheels, so the locked sync can only fail
+  // part-way and leave an environment the app reports as incomplete (#3584).
+  if (platform === "darwin" && arch === "x64")
+    throw new Error(
+      "Intel Macs cannot install the local backend: PyTorch publishes no Intel-Mac (macOS x86_64) wheels. " +
+        "Connect the app to a VoiceStudio backend on another computer (docs/install/macos.md). " +
+        "On an Apple Silicon Mac, run this from a native arm64 terminal with an arm64 Bun or Node.",
+    );
   const variant = await selectVariant({ env, platform, arch });
   const windowsRocm = platform === "win32" && variant === "rocm";
   if (windowsRocm && arch !== "x64")

@@ -6,6 +6,7 @@ import {
   assertMediaTool,
   authorizeMediaTool,
   authorizeModelsDirectory,
+  authorizeModelsDirectoryReadOnly,
 } from './media-authorization';
 import { isTrustedRenderer } from './trusted-renderer';
 import { replaceFile } from './replace-file';
@@ -43,24 +44,32 @@ import { inspectDataRelocation, relocateDataDirectory } from './data-relocation'
 import { createUninstallPlan, scanUninstallTargets, type UninstallRoots } from './uninstall-data';
 import { scheduleUninstallCleanup } from './uninstall-cleanup';
 import { sendToLiveWindow } from './window-safety';
-import { securityScopedDialogOptions, withSecurityScopedBookmark } from './security-scoped-files';
+import {
+  retainSecurityScopedDirectory,
+  securityScopedDialogOptions,
+  withSecurityScopedBookmark,
+} from './security-scoped-files';
 
 export const CHANNELS = {
   permissionsGetState: 'permissions:getState',
   permissionsOpenSettings: 'permissions:openSettings',
   filesAuthorizeMediaTool: 'files:authorizeMediaTool',
   filesAuthorizeModelsDirectory: 'files:authorizeModelsDirectory',
+  filesChooseEngineModelDirectory: 'files:chooseEngineModelDirectory',
   filesExtractScript: 'files:extractScript',
   backendGetStatus: 'backend:getStatus',
   backendAcknowledgeCrash: 'backend:acknowledgeCrash',
   backendRestart: 'backend:restart',
   backendSetupRuntime: 'backend:setupRuntime',
   backendCleanSetupRuntime: 'backend:cleanSetupRuntime',
+  backendSetupRuntimeOnCpu: 'backend:setupRuntimeOnCpu',
   backendSetRuntimeRegion: 'backend:setRuntimeRegion',
   backendChooseRuntimeLocation: 'backend:chooseRuntimeLocation',
   backendUseDefaultRuntimeLocation: 'backend:useDefaultRuntimeLocation',
   backendGetConnection: 'backend:getConnection',
   backendHostSnapshot: 'backend:hostSnapshot',
+  backendSetupDiagnostics: 'backend:setupDiagnostics',
+  backendCheckSetupConnection: 'backend:checkSetupConnection',
   backendTestRemote: 'backend:testRemote',
   backendUseRemote: 'backend:useRemote',
   backendUseLocal: 'backend:useLocal',
@@ -360,6 +369,14 @@ export function registerIpc(
     assertTrustedMainFrame(event, owner);
     return supervisor.hostSnapshot();
   });
+  ipcMain.handle(CHANNELS.backendSetupDiagnostics, (event) => {
+    assertTrustedMainFrame(event, getMainWindow());
+    return supervisor.getSetupDiagnostics();
+  });
+  ipcMain.handle(CHANNELS.backendCheckSetupConnection, (event) => {
+    assertTrustedMainFrame(event, getMainWindow());
+    return supervisor.checkSetupConnection();
+  });
   ipcMain.handle(CHANNELS.backendTestRemote, async (event, raw: unknown) => {
     const owner = getMainWindow();
     assertTrustedMainFrame(event, owner);
@@ -421,11 +438,15 @@ export function registerIpc(
     if (supervisor.connection.remote) throw new Error('local_only');
     if (!supervisor.status.managed) throw new Error('backend_not_managed');
     const source = await backendDataDirectory(supervisor);
-    const picked = await dialog.showOpenDialog(owner, {
-      defaultPath: dirname(source),
-      properties: ['openDirectory', 'createDirectory'],
-    });
+    const picked = await dialog.showOpenDialog(
+      owner,
+      securityScopedDialogOptions<Electron.OpenDialogOptions>({
+        defaultPath: dirname(source),
+        properties: ['openDirectory', 'createDirectory'],
+      }),
+    );
     if (picked.canceled || !picked.filePaths[0]) return null;
+    retainSecurityScopedDirectory(picked);
     const plan = await inspectDataRelocation(source, picked.filePaths[0]);
     relocationSelection = {
       authorization: randomUUID(),
@@ -492,7 +513,7 @@ export function registerIpc(
       await supervisor.shutdown();
       stopped = true;
       await new Promise((resolve) => setTimeout(resolve, 600));
-      await scheduleUninstallCleanup(plan.paths);
+      await scheduleUninstallCleanup(plan.targets);
       await exitForUninstall();
       return { scheduled: true, size_bytes: plan.size_bytes };
     } catch (error) {
@@ -516,6 +537,11 @@ export function registerIpc(
     const owner = getMainWindow();
     assertTrustedMainFrame(event, owner);
     return supervisor.cleanSetupRuntime();
+  });
+  ipcMain.handle(CHANNELS.backendSetupRuntimeOnCpu, (event) => {
+    const owner = getMainWindow();
+    assertTrustedMainFrame(event, owner);
+    return supervisor.setupRuntimeOnCpu();
   });
   ipcMain.handle(CHANNELS.backendSetRuntimeRegion, (event, raw: unknown) => {
     const owner = getMainWindow();
@@ -545,10 +571,14 @@ export function registerIpc(
     const owner = getMainWindow();
     assertTrustedMainFrame(event, owner);
     const kind = assertMediaTool(raw);
-    const picked = await dialog.showOpenDialog(owner, {
-      properties: ['openFile'],
-    });
+    const picked = await dialog.showOpenDialog(
+      owner,
+      securityScopedDialogOptions<Electron.OpenDialogOptions>({
+        properties: ['openFile'],
+      }),
+    );
     if (picked.canceled || !picked.filePaths[0]) return null;
+    retainSecurityScopedDirectory(picked);
     return authorizeMediaTool(await backendDataDirectory(supervisor), picked.filePaths[0], kind);
   });
 
@@ -558,13 +588,32 @@ export function registerIpc(
     if (typeof raw !== 'boolean') throw new Error('Invalid models-directory request');
     let selected = '';
     if (!raw) {
-      const picked = await dialog.showOpenDialog(owner, {
-        properties: ['openDirectory', 'createDirectory'],
-      });
+      const picked = await dialog.showOpenDialog(
+        owner,
+        securityScopedDialogOptions<Electron.OpenDialogOptions>({
+          properties: ['openDirectory', 'createDirectory'],
+        }),
+      );
       if (picked.canceled || !picked.filePaths[0]) return null;
+      retainSecurityScopedDirectory(picked);
       selected = picked.filePaths[0];
     }
     return authorizeModelsDirectory(await backendDataDirectory(supervisor), selected);
+  });
+  ipcMain.handle(CHANNELS.filesChooseEngineModelDirectory, async (event: IpcMainInvokeEvent, raw: unknown) => {
+    const owner = getMainWindow();
+    assertTrustedMainFrame(event, owner);
+    if (supervisor.connection.remote) throw new Error('Local model selection requires a local backend');
+    if (typeof raw !== 'string' || !['omnivoice', 'mlx-audio'].includes(raw))
+      throw new Error('Unsupported engine local model selector');
+    const picked = await dialog.showOpenDialog(owner,
+      securityScopedDialogOptions<Electron.OpenDialogOptions>({ properties: ['openDirectory'] }),
+    );
+    if (picked.canceled || !picked.filePaths[0]) return null;
+    retainSecurityScopedDirectory(picked);
+    const dataDirectory = await backendDataDirectory(supervisor);
+    if (supervisor.connection.remote) throw new Error('Local model selection requires a local backend');
+    return authorizeModelsDirectoryReadOnly(dataDirectory, picked.filePaths[0], raw);
   });
 
   ipcMain.handle(CHANNELS.filesSaveAudio, async (event, raw: unknown): Promise<SaveAudioResult> => {

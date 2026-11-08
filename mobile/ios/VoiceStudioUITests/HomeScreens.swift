@@ -3,7 +3,7 @@ import XCTest
 final class HomeScreens: XCTestCase {
     @MainActor func testHomeStartsOfflineAndOpensEveryWorkspace() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-smoke", "-AppleLanguages", "(en)"]
-        app.launch(); XCTAssertTrue(app.buttons["consent.no"].waitForExistence(timeout: 10)); app.buttons["consent.no"].tap()
+        app.launch(); app.declineConsent()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
         let title = app.descendants(matching: .any)["navigation.title"].firstMatch
         XCTAssertTrue(title.exists)
@@ -11,11 +11,16 @@ final class HomeScreens: XCTestCase {
         XCTAssertLessThan(title.frame.midX, app.frame.width / 2)
         XCTAssertTrue(app.staticTexts["VoiceStudio"].exists)
         let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.name = "Home-dark"; attachment.lifetime = .keepAlways; add(attachment)
-        for (route, title) in [("speak","Speak"),("voices","Voices"),("dub","Dub"),("dictate","Dictate"),("models","Models"),("connect","Connect to VoiceStudio")] {
+        for (route, title) in [("speak","Speech"),("voices","Clone a voice"),("dub","Dub"),("dictate","Dictate"),("models","Models"),("connect","Connect to VoiceStudio")] {
             let card = app.buttons["home."+route]
-            for _ in 0..<5 { if card.isHittable { break }; app.swipeUp() }
+            app.reveal(card)
             XCTAssertTrue(card.isHittable, route); card.tap()
             XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5), route)
+            if route == "voices" {
+                app.buttons["Cancel"].tap()
+                XCTAssertTrue(app.navigationBars[title].waitForNonExistence(timeout: 5))
+                continue
+            }
             // A Back tap during the push transition can be dropped; retry until Home shows,
             // and never tap again once it does (Home's first bar button is Projects).
             for _ in 0..<3 where !app.navigationBars["Home"].exists {
@@ -31,7 +36,7 @@ final class HomeScreens: XCTestCase {
         app.tabButton("Settings").tap()
         app.buttons["Mode"].tap(); app.buttons["choice.option.light"].tap()
         app.tabButton("Home").tap()
-        for _ in 0..<5 { if app.buttons["home.speak"].isHittable { break }; app.swipeDown() }
+        app.reveal(app.buttons["home.speak"], swipingDown: true)
         let light = XCTAttachment(screenshot: app.screenshot()); light.name = "Home-light"; light.lifetime = .keepAlways; add(light)
         app.buttons["home.speak"].tap(); XCTAssertTrue(app.textViews["speak.text"].waitForExistence(timeout: 5))
     }
@@ -43,8 +48,7 @@ final class MaintainerCardScreens: XCTestCase {
         app.launchArguments = ["--ui-smoke", "-AppleLanguages", "(en)"]
         if largeText { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
         app.launch()
-        XCTAssertTrue(app.buttons["consent.no"].waitForExistence(timeout: 10))
-        app.buttons["consent.no"].tap()
+        app.declineConsent()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
         return app
     }
@@ -53,7 +57,15 @@ final class MaintainerCardScreens: XCTestCase {
         let app = launch()
         let palash = app.buttons["home.contributor.debpalash"]
         let shimul = app.buttons["home.contributor.velixio"]
-        let other = app.descendants(matching: .any)["home.contributor.kevin9327"].firstMatch
+        // The other-contributor grid is regenerated weekly from GitHub, so its order is
+        // not fixed: read the visible cells instead of hardcoding which login lands where.
+        let core: Set = ["home.contributor.debpalash", "home.contributor.velixio", "home.contributor.all"]
+        var seen = Set<String>()
+        let grid = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "home.contributor.")).allElementsBoundByIndex
+            .filter { !core.contains($0.identifier) && seen.insert($0.identifier).inserted && $0.isHittable }
+        XCTAssertGreaterThanOrEqual(grid.count, 4)
+        guard let other = grid.min(by: { ($0.frame.minY, $0.frame.minX) < ($1.frame.minY, $1.frame.minX) }) else { return }
         XCTAssertTrue(palash.isHittable)
         XCTAssertTrue(shimul.isHittable)
         XCTAssertTrue(other.isHittable)
@@ -74,14 +86,13 @@ final class MaintainerCardScreens: XCTestCase {
         XCTAssertTrue(credit.isHittable)
         XCTAssertEqual(credit.label, "Brought to you by")
         XCTAssertLessThanOrEqual(credit.frame.maxY, palash.frame.minY)
-        for login in ["kevin9327", "psiberfunk", "jaketame", "rudycelekli"] {
-            let visible = app.descendants(matching: .any)["home.contributor." + login].firstMatch
-            XCTAssertTrue(visible.isHittable, login)
-            XCTAssertGreaterThanOrEqual(visible.frame.height + 0.001, 44)
-        }
-        let bottomRow = app.descendants(matching: .any)["home.contributor.psiberfunk"].firstMatch
-        XCTAssertGreaterThan(bottomRow.frame.minY, other.frame.minY)
-        XCTAssertLessThanOrEqual(max(bottomRow.frame.maxY, subtitle.frame.maxY) - min(wordmark.frame.minY, credit.frame.minY), 180)
+        for visible in grid { XCTAssertGreaterThanOrEqual(visible.frame.height + 0.001, 44, visible.identifier) }
+        // A compact two-row strip: exactly two row positions, the second below the first.
+        let rows = Set(grid.map { ($0.frame.minY * 2).rounded() / 2 }).sorted()
+        XCTAssertEqual(rows.count, 2, "\(rows)")
+        let bottomRow = grid.map(\.frame.maxY).max() ?? other.frame.maxY
+        XCTAssertGreaterThan(rows.last ?? 0, other.frame.minY)
+        XCTAssertLessThanOrEqual(max(bottomRow, subtitle.frame.maxY) - min(wordmark.frame.minY, credit.frame.minY), 180)
         let compact = XCTAttachment(screenshot: app.screenshot())
         compact.name = "Home-compact-hero"; compact.lifetime = .keepAlways; add(compact)
         for (login, name, role, website, social) in [
