@@ -202,12 +202,10 @@ def load_audio(audio_path: str, sampling_rate: int):
     except (ImportError, RuntimeError, OSError):
         # torchaudio >= 2.9 sends load() through TorchCodec, which raises
         # ImportError when the FFmpeg shared libraries are absent (and ignores
-        # backend="soundfile"). pydub decodes through the ffmpeg binary instead.
-        from pydub import AudioSegment
-
-        aseg = AudioSegment.from_file(audio_path)
-        waveform = audiosegment_to_tensor(aseg)
-        prompt_sampling_rate = aseg.frame_rate
+        # backend="soundfile"). read_audio decodes WAV/FLAC/OGG (including
+        # 32-bit float WAV) with soundfile, so those need no FFmpeg at all;
+        # only other containers go through pydub and the ffmpeg binary.
+        waveform, prompt_sampling_rate = read_audio(audio_path)
 
     if prompt_sampling_rate != sampling_rate:
         waveform = torchaudio.functional.resample(
@@ -219,6 +217,55 @@ def load_audio(audio_path: str, sampling_rate: int):
         waveform = torch.mean(waveform, dim=0, keepdim=True)
 
     return waveform
+
+
+def read_audio(source) -> "tuple[torch.Tensor, int]":
+    """Read audio as a channels-first float32 tensor, without TorchCodec.
+
+    torchaudio >= 2.9 decodes only through TorchCodec (FFmpeg shared
+    libraries), which VoiceStudio does not install. soundfile covers WAV, FLAC
+    and OGG; anything else (MP3 on old libsndfile, M4A) goes through pydub and
+    the ffmpeg binary.
+    """
+    import soundfile as sf
+
+    try:
+        samples, rate = sf.read(source, dtype="float32", always_2d=True)
+        return torch.from_numpy(samples.T.copy()), int(rate)
+    except RuntimeError:  # soundfile.LibsndfileError: a container libsndfile cannot decode
+        if hasattr(source, "seek"):
+            source.seek(0)
+        aseg = AudioSegment.from_file(source)
+        return audiosegment_to_tensor(aseg), aseg.frame_rate
+
+
+_SAVE_SUBTYPES = {8: "PCM_U8", 16: "PCM_16", 24: "PCM_24", 32: "PCM_32"}
+
+
+def save_audio(target, waveform: torch.Tensor, sample_rate: int, format: Optional[str] = None,
+               bits_per_sample: Optional[int] = None) -> None:
+    """Write a channels-first tensor with soundfile (no TorchCodec needed).
+
+    Matches ``torchaudio.save`` defaults: float tensors become 32-bit float WAV
+    unless ``bits_per_sample`` asks for integer PCM. ``format`` defaults to the
+    file extension, or WAV for buffers.
+    """
+    import soundfile as sf
+
+    data = waveform.detach().cpu()
+    if data.ndim == 1:
+        data = data.unsqueeze(0)
+    suffix = os.path.splitext(os.fspath(target))[1].lstrip(".") if isinstance(target, (str, os.PathLike)) else ""
+    fmt = (format or suffix or "wav").upper()
+    if bits_per_sample in _SAVE_SUBTYPES:
+        subtype = _SAVE_SUBTYPES[bits_per_sample]
+    elif fmt == "WAV" and data.is_floating_point():
+        subtype = "FLOAT"
+    else:
+        subtype = None  # soundfile's default for the container (PCM_16 FLAC, Vorbis OGG)
+    if data.is_floating_point():
+        data = data.float()
+    sf.write(target, data.numpy().T, int(sample_rate), subtype=subtype, format=fmt)
 
 
 def remove_silence(

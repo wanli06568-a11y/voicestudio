@@ -530,9 +530,16 @@ class SegmentCache:
         return self.lease.hold(path) if self.lease is not None else path
 
     def _extra_sig_for(self, span) -> str:
+        from services.pronunciation import has_inline_override
+
+        sig = self.extra_sig
         if self.gap_sig and self.gap_spans is not None and self.gap_spans(span):
-            return f"{self.extra_sig}\x00{self.gap_sig}"
-        return self.extra_sig
+            sig = f"{sig}\x00{self.gap_sig}"
+        if has_inline_override(span.text):
+            # Segments with an inline [[…]] override were rendered with the
+            # brackets before #3561; only those re-key, the rest keep hitting.
+            sig = f"{sig}\x00inline_overrides"
+        return sig
 
     def _existing_path(self, span, nonce: int = 0) -> Optional[str]:
         """The file holding ``span``'s audio under the current key, adopting a
@@ -598,6 +605,9 @@ class SegmentCache:
         try:
             from services.audio_io import atomic_save_wav
             os.makedirs(self.dir, exist_ok=True)
+            # Durable: a power-off can leave a full-length file whose sample
+            # blocks were never written, which ``wav_is_complete`` (header and
+            # length only) cannot detect, and the span would then be reused.
             atomic_save_wav(self._path(span, nonce), audio, self.sample_rate, durable=True)
         except Exception:
             pass

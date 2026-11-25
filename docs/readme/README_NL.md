@@ -120,12 +120,12 @@ Alles hierboven is gratis, draait op je eigen hardware en heeft geen account nod
       <a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section"><img src="../assets/voicestudio-pro.svg" alt="" width="56" height="56" align="middle" /></a>&nbsp;&nbsp;<strong><a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section">VoiceStudio Pro</a></strong><br /><br />
       Voor betaald klantwerk op meer dan één machine.
       <ul>
-        <li>Een commerciële licentie voor je klantwerk, per e-mail bezorgd</li>
+        <li>Een commerciële licentie voor de code van VoiceStudio in je klantwerk, per e-mail bezorgd</li>
         <li>Eén gebruiker op maximaal 3 apparaten tegelijk</li>
         <li>Stuur taken naar je andere GPU’s terwijl je projecten lokaal blijven</li>
         <li>Nieuwe functies en oplossingen als eerste</li>
       </ul>
-      <sub>Closed-source build, account vereist, 7 dagen volledige terugbetaling. De AGPL-3.0-app blijft gratis, ook voor commercieel gebruik onder de voorwaarden daarvan.</sub><br /><br />
+      <sub>Closed-source build, account vereist, 7 dagen volledige terugbetaling. De AGPL-3.0-app blijft gratis, ook voor commercieel gebruik onder de voorwaarden daarvan. Geen van beide licenties dekt modelgewichten: de standaard OmniVoice-gewichten zijn niet-commercieel (CC-BY-NC), dus controleer vóór klantwerk de licentie van elk model in Model Manager.</sub><br /><br />
       <strong><a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section">Bekijk de Pro-abonnementen →</a></strong>
     </td>
     <td width="50%" valign="top">
@@ -206,6 +206,8 @@ De app-gebruikersinterface draait op Intel; sluit het aan op een VoiceStudio bac
 
 <details>
 <summary><img src="../../docs/assets/platforms/windows.svg" alt="" width="20" height="20" /> <strong>Windows</strong> · PowerShell · EXE</summary>
+
+De experimentele [Windows ROCm-installatie](../../docs/install/windows-rocm.md) ondersteunt bepaalde RDNA 2 RX 6000-GPU’s met doelarchitectuur `gfx1030`, `gfx1031` of `gfx1032`; de RX 6500 XT (`gfx1034`) valt hierbuiten. De afzonderlijk vastgezette CTranslate2-build bevat native `gfx1031`-kernels voor transcriptie op de RX 6700 XT; de installatie controleert of deze daadwerkelijk op de GPU draaien. Tests op de RX 6700 XT omvatten ook native spraakgeneratie met Torch en PyTorch Whisper. Onder ROCm 10 gebruikt faster-whisper een apart inferentieproces voor veilige CPU-selectie en terugval naar de CPU. Voor andere kaarten en taken gelden de verificatiebeperkingen in de handleiding. Prestatieprofielen controleren gewijzigde enginekeuzes vóór het opslaan in een offline kindproces en behouden de terugvaloptie als een geïnstalleerde runtime faalt.
 
 <blockquote>
 
@@ -499,9 +501,9 @@ Upgraden vanaf 0.5.3 of ouder (de Tauri-app)? [Installeer de nieuwe app afzonder
 | Hulp bij het instellen | [Problemen oplossen](../../docs/install/troubleshooting.md) · [Modeldownloads](../../docs/downloading-models.md) |
 | Gidsen | [Nasynchronisatie met meerdere sprekers](../../docs/dubbing/multi-speaker-guide.md) · [Expressieve spraak](../../docs/expressive-speech.md) · [Nasynchronisaties exporteren](../../docs/dubbing/export.md) |
 | Modellen & kwaliteit | [Enginehandleidingen](../../docs/engines/README.md) · [whisper.cpp ASR](../../docs/engines/whisper-cpp.md) · [Benchmarks](../../docs/benchmarks.md) |
-| Integraties | [Lokale API](../../docs/speech-platform.md) · [MCP](../../docs/mcp.md) · [Voorbeelden](../../examples/README.md) |
+| Integraties | [CLI](../../docs/install/script.md#terminal-command) · [Lokale API](../../docs/speech-platform.md) · [MCP](../../docs/mcp.md) · [Voorbeelden](../../examples/README.md) |
 | Telefoon-apps | [iOS en Android](../../docs/mobile.md) |
-| Ontwikkeling | [Bijdragen](../../.github/CONTRIBUTING.md) ([teken de CLA](../../.github/CONTRIBUTING.md#contribution-licensing) vóór uw eerste PR) · [Changelog](../../CHANGELOG.md) |
+| Ontwikkeling | [Bijdragen](../../.github/CONTRIBUTING.md) ([teken de CLA](../../.github/CONTRIBUTING.md#contribution-licensing) vóór uw eerste PR) · [Changelog](../../CHANGELOG.md) · [Beleid voor codeondertekening](../code-signing-policy.md) |
 
 Agentvaardigheden: `npx skills add debpalash/VoiceStudio` (**voicestudio** voor audiowerk, **voicestudio-maintainer** voor de repository).
 

@@ -5,10 +5,10 @@ final class SupportPages: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-smoke", "-AppleLanguages", "(en)",
                                "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
-        app.launch(); app.declineConsent(); app.tabButton("Settings").tap()
+        app.launch(); app.declineConsent(); app.tabButton("Settings").tapReady()
         for route in ["donate", "pro", "other-apps"] {
             let entry = app.buttons["settings." + route]
-            app.reveal(entry); XCTAssertTrue(entry.isHittable); entry.tap()
+            app.reveal(entry); XCTAssertTrue(entry.isHittable); entry.tapReady()
             if route == "donate" {
                 for id in ["github", "kofi", "paypal"] {
                     let link = app.descendants(matching: .any).matching(identifier: "support.donate." + id).firstMatch
@@ -29,7 +29,7 @@ final class SupportPages: XCTestCase {
             let image = XCTAttachment(screenshot: app.screenshot())
             image.name = "Support-" + route; image.lifetime = .keepAlways; add(image)
             XCTAssertFalse(app.buttons["models.accept"].exists)
-            app.navigationBars.buttons.element(boundBy: 0).tap()
+            app.navigationBars.buttons.element(boundBy: 0).tapReady()
         }
     }
 }

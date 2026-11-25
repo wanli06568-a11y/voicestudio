@@ -242,6 +242,16 @@ def _dots_installed() -> bool:
     return is_dots_tts_installed()
 
 
+def _ming_invalidate() -> None:
+    from engines.ming_tts import bootstrap
+    bootstrap.invalidate()
+
+
+def _ming_installed() -> bool:
+    from engines.ming_tts.bootstrap import is_ming_tts_installed
+    return is_ming_tts_installed()
+
+
 def _host_family() -> str:
     """The accelerator family this host runs, or "cpu" when it cannot tell."""
     try:
@@ -406,12 +416,36 @@ def _moss_host() -> tuple[bool, str]:
     )
 
 
+def _sfx_installed() -> bool:
+    from engines.moss_sfx.bootstrap import is_sfx_installed
+    return is_sfx_installed()
+
+
+def _sfx_host() -> tuple[bool, str]:
+    from engines.moss_sfx import host_support
+    return host_support()
+
+
 def _dots_host() -> tuple[bool, str]:
     if sys.platform != "win32":
         return True, ""
     return False, (
         "dots.tts publishes no Windows install. Use the audio.cpp dots.tts "
         "engine instead, which runs natively on Windows."
+    )
+
+
+def _ming_host() -> tuple[bool, str]:
+    # Upstream tests torch 2.6 + CUDA 12.4 on NVIDIA Linux only. Its pinned
+    # torch==2.6.0 is the CUDA build from PyPI on Linux but CPU-only on Windows,
+    # and the app's shared CUDA index (cu128) has no 2.6.0, so the one-click
+    # install cannot give Windows a CUDA torch.
+    if sys.platform == "linux" and _host_family() == "cuda":
+        return True, ""
+    return False, (
+        "Ming-3.0-tts's one-click install is for Linux with an NVIDIA GPU "
+        "(upstream tests CUDA only). On other machines pick another engine; "
+        "its guide covers a manual install on a CUDA host."
     )
 
 
@@ -579,6 +613,73 @@ SPECS: dict[str, SidecarSpec] = {
         invalidate=_dots_invalidate,
         installed_probe=_dots_installed,
     ),
+    # Ming-3.0-tts-0.5b (#3793). Upstream is not pip-installable (flat modules,
+    # requirements.txt only); the sidecar puts the checkout on sys.path. The
+    # ~3 GB weights come only from the Model Catalogue row the user starts.
+    "ming-tts": SidecarSpec(
+        engine_id="ming-tts",
+        display_name="Ming-3.0-tts",
+        repo_url="https://github.com/inclusionAI/Ming-3.0-tts.git",
+        tarball_url=(
+            "https://github.com/inclusionAI/Ming-3.0-tts/archive/"
+            "a39b80660bdc5a4394d5e1d41af6dbfd9c443a54.tar.gz"
+        ),
+        checkout_dirname="Ming-3.0-tts",
+        env_var="OMNIVOICE_MING_TTS_DIR",
+        probe_module="ming_tts",
+        probe_code="import sys; sys.path.insert(0, {checkout_repr}); import ming_tts",
+        source_revision="a39b80660bdc5a4394d5e1d41af6dbfd9c443a54",
+        # No pyproject.toml upstream: requirements.txt is its manifest.
+        source_manifest="requirements.txt",
+        source_required_path="ming_tts.py",
+        # The upstream flash-attn wheel and the tiny model both target 3.10.
+        venv_args=("--python", "3.10"),
+        install_args=("-r", "{checkout}/requirements.txt"),
+        host_supported=_ming_host,
+        docs_path="docs/engines/ming-tts.md",
+        # ~7 GB venv (torch 2.6 + CUDA libs), ~3 GB of weights from the Model Catalogue.
+        required_bytes=12 * _GIB,
+        dependency_bytes=8 * _GIB,
+        temporary_free_bytes=8 * _GIB,
+        disk_confidence="estimated",
+        invalidate=_ming_invalidate,
+        installed_probe=_ming_installed,
+    ),
+    # MOSS-SoundEffect v2.0 (#3577): text to sound effects, not speech. Upstream
+    # pins numpy==1.26.4 / transformers==4.57.1 and CUDA 12.8 torch 2.9.0, so it
+    # gets its own Python 3.12 venv; the weights are the diffusers-style v2.0
+    # repository, downloaded only when the user clicks Install.
+    "moss-soundeffect": SidecarSpec(
+        engine_id="moss-soundeffect",
+        display_name="MOSS-SoundEffect v2.0",
+        repo_url="https://github.com/OpenMOSS/MOSS-TTS.git",
+        tarball_url=(
+            "https://github.com/OpenMOSS/MOSS-TTS/archive/"
+            "934d6826b084c46a0d033402174d5f8ac4ed2519.tar.gz"
+        ),
+        checkout_dirname="MOSS-TTS",
+        env_var="OMNIVOICE_MOSS_SFX_DIR",
+        probe_module="moss_soundeffect_v2",
+        source_revision="934d6826b084c46a0d033402174d5f8ac4ed2519",
+        source_required_path="moss_soundeffect_v2/pyproject.toml",
+        # Upstream requires-python is >=3.12.
+        venv_args=("--python", "3.12"),
+        install_args=("-e", "{checkout}/moss_soundeffect_v2"),
+        torch_pins=("torch==2.9.0", "torchaudio==2.9.0", "torchvision==0.24.0"),
+        weights_repo_id="OpenMOSS-Team/MOSS-SoundEffect-v2.0",
+        weights_revision="e35df4d82fbe87fcd5d14e5d100e349c0c3c076d",
+        weights_subdir="checkpoints",
+        weights_config_names=("model_index.json",),
+        host_supported=_sfx_host,
+        docs_path="docs/engines/moss-soundeffect.md",
+        # ~8 GB venv (CUDA torch + gradio + audiotools) and 11.2 GB of weights.
+        required_bytes=22 * _GIB,
+        weights_bytes=11_230_170_282,
+        dependency_bytes=8 * _GIB,
+        temporary_free_bytes=8 * _GIB,
+        disk_confidence="estimated",
+        installed_probe=_sfx_installed,
+    ),
     # PyPI packages rather than repositories: nothing to clone, and the managed
     # root holds only the engine's own venv. The pins are the app's own
     # optional extras (a test ties the two together), so the engine runs the
@@ -624,6 +725,10 @@ SPECS: dict[str, SidecarSpec] = {
     # leaves torch unpinned, so the pair is pinned here; each build of it was
     # resolved with voxcpm==2.0.3 on 2026-09-10 (Windows and Linux: +cu128 and
     # +cpu; Apple Silicon: plain). Weights download on first synthesis.
+    # voxcpm -> wetext -> kaldifst, which has no MSVC-buildable sdist (openfst
+    # uses __builtin_ctzll, #4316) and published 1.9.1's sdist before its wheels.
+    # The pin is a release whose wheels cover every host, and --only-binary makes
+    # a missing wheel fail fast instead of compiling from source.
     "voxcpm2": SidecarSpec(
         engine_id="voxcpm2",
         display_name="VoxCPM2",
@@ -634,7 +739,7 @@ SPECS: dict[str, SidecarSpec] = {
         probe_module="voxcpm",
         has_source=False,
         venv_args=("--python", "3.11"),
-        install_args=("voxcpm==2.0.3",),
+        install_args=("voxcpm==2.0.3", "kaldifst==1.9.0", "--only-binary", "kaldifst"),
         torch_pins=("torch==2.11.0", "torchaudio==2.11.0"),
         docs_path="docs/engines/voxcpm2.md",
         # CUDA torch (~5 GB unpacked) + transformers.
@@ -1075,6 +1180,11 @@ STEP_IDS = (
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
 
+from core import activity as _activity  # noqa: E402
+
+_activity.register_probe("engine-installs", lambda: any(
+    job.get("state") == "running" for job in list(_jobs.values())))
+
 # Guards each job's log deque: the worker thread appends while the status
 # poll copies it, and list() over a deque raises RuntimeError if it mutates
 # mid-iteration. One module-level lock is plenty — appends are tiny and at
@@ -1186,11 +1296,31 @@ def _missing_compiler_remediation(platform: str = sys.platform) -> str:
 
 
 def _log(job: dict, line: str) -> None:
+    """Append one line of install output to the job record and the logger.
+
+    Every streamed line here is raw ``git``/``uv`` output, and uv runs with an
+    environment derived from ``os.environ`` (``uv_subprocess_env``) -- so a
+    regional-mirror or proxy URL of the form ``https://user:token@host``, which
+    the sanctioned-call list explicitly supports, is echoed back into a log the
+    install panel renders and a user may paste into a bug report. Redact before
+    either sink, exactly as ``subprocess_backend`` does for sidecar stderr.
+    A redaction failure never fails an install, but it never records the raw
+    line either: a marker is logged instead.
+    """
     line = line.rstrip()
-    if line:
-        with _log_lock:
-            job["log"].append(line)
-        logger.info("[%s install] %s", job["engine_id"], line)
+    if not line:
+        return
+    try:
+        from core.scrub import scrub_text
+
+        line = scrub_text(line)
+    except Exception:  # noqa: BLE001 - never fatal, never raw
+        # No exc_info: a traceback would add source and home paths to the log.
+        logger.debug("Install log redaction unavailable; line withheld")
+        line = "***REDACTED*** (install output withheld: redaction unavailable)"
+    with _log_lock:
+        job["log"].append(line)
+    logger.info("[%s install] %s", job["engine_id"], line)
 
 
 def _serialize_job(job: Optional[dict]) -> Optional[dict]:
@@ -1357,8 +1487,11 @@ def start_install(engine_id: str) -> dict:
         job["_expected_env"] = os.environ.get(spec.env_var)
         job["_preserve_existing"] = _healthy(spec, check_rocm=False)
         _jobs[engine_id] = job
+    from core import diagnostic_reports
+    # The user-started install owns its observed grant through subprocess
+    # completion and output-drain cleanup, including an explicitly OFF owner.
     th = threading.Thread(
-        target=_run_install, args=(spec, job),
+        target=diagnostic_reports.bind_callable(_run_install), args=(spec, job),
         name=f"sidecar-install-{engine_id}", daemon=True,
     )
     th.start()
@@ -1480,6 +1613,8 @@ def _run_install(spec: SidecarSpec, job: dict) -> None:
         job["state"] = "succeeded"
         _log(job, f"{spec.display_name} installed successfully.")
     except _StepError as exc:
+        from core import diagnostic_reports
+        diagnostic_reports.capture_failure("install", error=exc, engine_id=spec.engine_id)
         job["state"] = "failed"
         job["error"] = str(exc)
         job["remediation"] = exc.remediation

@@ -2,7 +2,13 @@ import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { startHealthBackend } from './fake-health-backend.mjs';
 import { routesForShard } from './crawler-shards.mjs';
-import { waitForQuietRequests } from './crawler-settle.mjs';
+import {
+  createTraffic,
+  stalledClick,
+  stalledRoute,
+  tracksRequest,
+  waitForQuietRequests,
+} from './crawler-settle.mjs';
 
 /**
  * Clicks every enabled button on every static route, once per backend fault mode, and fails on
@@ -15,8 +21,11 @@ import { waitForQuietRequests } from './crawler-settle.mjs';
  *    new toast or alert, no changed text), so the user sees a button that "does nothing"
  *  - crash: an uncaught exception or unhandled promise rejection
  *  - console: a console.error the click caused
- *  - unsettled: API traffic never gives the UI a full quiet grace within the request budget
+ *  - unsettled: same-origin traffic (API reads and lazily loaded code) never gives the UI a full
+ *    quiet grace within the request budget
  *  - frozen: the renderer stops answering after the click
+ *  - stalled: a request stayed in flight for STALLED_MS (a hung backend or dev server); the mode
+ *    stops at once with that one finding instead of waiting out the budget on every later click
  *
  * Fault modes apply to API writes (anything but GET/HEAD) issued after the click, so every button
  * must recover from a failed request instead of only the happy path:
@@ -37,6 +46,7 @@ import { waitForQuietRequests } from './crawler-settle.mjs';
  */
 
 const BASE = process.env.VOICESTUDIO_UI_URL || 'http://localhost:3912';
+const ORIGIN = new URL(BASE).origin;
 const MODES = ['fixture', 'http-500', 'network-error', 'bad-json'];
 const modes = (process.env.VOICESTUDIO_CRAWL_MODES || MODES.join(',')).split(',').filter(Boolean);
 const routeFilter = (process.env.VOICESTUDIO_CRAWL_ROUTES || '').split(',').filter(Boolean);
@@ -44,8 +54,15 @@ const [shard, shards] = (process.env.VOICESTUDIO_CRAWL_SHARD || '1/1').split('/'
 assert.ok(shard >= 1 && shard <= shards, 'VOICESTUDIO_CRAWL_SHARD must look like 1/3');
 const verbose = process.env.VOICESTUDIO_CRAWL_VERBOSE === '1';
 
-/** Longest a click's API traffic may stay in flight before the button is judged stuck. */
+/** Longest a click's traffic may stay in flight before the button is judged stuck. */
 const REQUEST_BUDGET_MS = 8_000;
+/**
+ * A request in flight this long means the backend or dev server stopped answering, not a slow
+ * click. Judged when a click's own wait ends unsettled (already a failure) and after each route
+ * (a request no click judged, still open). The waits before a click are never judged: a request
+ * that settles during a later click still passes.
+ */
+const STALLED_MS = 30_000;
 /** Grace after the traffic settles for React to drop its loading state. */
 const SETTLE_MS = 400;
 /** Chromium logs every failed fetch itself; the app did nothing wrong by making the request. */
@@ -67,6 +84,20 @@ export const SKIPPED_BUTTONS = {};
  * reason or issue link. Keep this empty — fix the button instead of listing it.
  */
 export const KNOWN_FINDINGS = {};
+
+/** A request that will never finish; the mode stops instead of timing out every later click. */
+class CrawlStalled extends Error {}
+
+/** One line on whether the backend still answers, behind the same dev-server proxy as the app. */
+async function backendHealth() {
+  const started = performance.now();
+  try {
+    const response = await fetch(`${ORIGIN}/api/health`, { signal: AbortSignal.timeout(3_000) });
+    return `/api/health answered ${response.status} in ${Math.round(performance.now() - started)}ms`;
+  } catch (error) {
+    return `/api/health did not answer (${error.name === 'TimeoutError' ? 'no reply in 3s' : error.message})`;
+  }
+}
 
 function faultResponse(mode) {
   if (mode === 'http-500')
@@ -94,10 +125,9 @@ async function openSession(browser, mode) {
   const state = {
     faulting: false,
     failedWrites: 0,
-    inflight: new Set(),
-    activity: 0,
     events: [],
   };
+  const traffic = createTraffic();
   await context.route('**/*', (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -117,26 +147,34 @@ async function openSession(browser, mode) {
     if (response.status() >= 400 || mode === 'bad-json') countFailure(response.request());
   });
   page.on('requestfailed', countFailure);
+  // frame() throws for service-worker requests, which never load the page.
+  const loadsPage = (request) => {
+    try {
+      return request.isNavigationRequest() && request.frame() === page.mainFrame();
+    } catch {
+      return false;
+    }
+  };
   page.on('request', (request) => {
-    if (isApi(request) && request.resourceType() !== 'eventsource') {
-      state.inflight.add(request);
-      state.activity += 1;
+    if (tracksRequest(request.url(), request.resourceType(), ORIGIN)) {
+      traffic.start(request, { navigation: loadsPage(request) });
       recent.push(request);
       if (recent.length > 6) recent.shift();
     }
   });
+  // A new document ends the old one's requests, which Playwright never reports as finished.
+  page.on('framenavigated', (frame) => frame === page.mainFrame() && traffic.committed());
   // Name what kept the page busy, so an unsettled finding points at its request.
   const recent = [];
   const describeTraffic = () => {
-    const names = [...new Set([...state.inflight, ...recent].map((r) => `${r.method()} ${new URL(r.url()).pathname}`))];
+    const names = [...new Set([...traffic.inflight, ...recent].map((r) => `${r.method()} ${new URL(r.url()).pathname}`))];
     return names.length ? `: ${names.slice(0, 6).join(', ')}` : '';
   };
-  const finished = (request) => {
-    if (!state.inflight.delete(request)) return;
-    state.activity += 1;
-  };
-  page.on('requestfinished', finished);
-  page.on('requestfailed', finished);
+  page.on('requestfinished', (request) => traffic.finish(request));
+  page.on('requestfailed', (request) => {
+    if (loadsPage(request)) traffic.navigationFailed();
+    traffic.finish(request);
+  });
   page.on('pageerror', (error) =>
     state.events.push({ kind: 'crash', detail: error.stack || error.message }),
   );
@@ -147,12 +185,22 @@ async function openSession(browser, mode) {
   page.on('dialog', (dialog) => dialog.accept().catch(() => {}));
   context.on('page', (popup) => popup !== page && popup.close().catch(() => {}));
 
-  const settle = (grace = SETTLE_MS, snapshot) => waitForQuietRequests(state, {
+  const settle = (grace = SETTLE_MS, snapshot) => waitForQuietRequests(traffic, {
     wait: (duration) => page.waitForTimeout(duration),
     graceMs: grace,
     budgetMs: REQUEST_BUDGET_MS,
     snapshot,
   });
+  /** Stop the mode on a stalled request, naming it, what started it and the backend's health. */
+  const failStalled = async (stalled) => {
+    if (!stalled) return;
+    const { request, ageMs, cause } = stalled;
+    throw new CrawlStalled(
+      `${request.method()} ${new URL(request.url()).pathname} has been pending for ` +
+        `${Math.round(ageMs / 1000)}s, since ${cause || 'the screen opened'} ` +
+        `(${traffic.inflight.size} request(s) pending; ${await backendHealth()})`,
+    );
+  };
   const navigate = (to) =>
     page.evaluate(async (target) => {
       // Import once per page load: re-importing after a Vite hot update can catch the
@@ -204,6 +252,7 @@ async function openSession(browser, mode) {
     } finally {
       state.faulting = false;
     }
+    await failStalled(stalledClick(observation, traffic, STALLED_MS));
     const problems = [];
     const failedWrite = Boolean(state.failedWrites) && mode !== 'fixture' && observation.settled;
     // One read gathers the evidence and proves the renderer still answers.
@@ -230,7 +279,7 @@ async function openSession(browser, mode) {
         : 'renderer did not answer within 5s' }];
     }
     if (!observation.settled)
-      problems.push({ kind: 'unsettled', detail: `API traffic did not stay quiet within ${REQUEST_BUDGET_MS}ms (${observation.pending} request(s) pending${describeTraffic()})` });
+      problems.push({ kind: 'unsettled', detail: `traffic did not stay quiet within ${REQUEST_BUDGET_MS}ms (${observation.pending} request(s) pending${describeTraffic()})` });
     const after = observation.snapshot;
     if (observation.settled && after > before && new URL(page.url()).hash === `#${route}`)
       problems.push({
@@ -255,7 +304,7 @@ async function openSession(browser, mode) {
   await page.goto(`${BASE}/#/settings/usage`);
   await page.locator('main').first().waitFor();
   await settle();
-  return { context, page, navigate, buttons, arm, clickAndCheck };
+  return { context, page, traffic, failStalled, navigate, buttons, arm, clickAndCheck };
 }
 
 const label = (locator) =>
@@ -421,9 +470,10 @@ async function fillForm(page) {
 
 async function crawlMode(browser, mode, routes) {
   const session = await openSession(browser, mode);
-  const { context, navigate, buttons, arm, clickAndCheck, page } = session;
+  const { context, navigate, buttons, arm, clickAndCheck, page, traffic, failStalled } = session;
   /** A click or upload that reloads the whole page (e.g. "Reload app") is legitimate. */
-  const RELOADED = /Execution context was destroyed|navigat|Target .*closed|detached/i;
+  const RELOAD_ERROR = /Execution context was destroyed|navigat|Target .*closed|detached/i;
+  const reloaded = (error) => !(error instanceof CrawlStalled) && RELOAD_ERROR.test(error.message);
   const recover = async (route, error) => {
     if (verbose)
       console.log(`[${mode}] ${route} recovering after: ${error.message.split('\n')[0]}`);
@@ -437,13 +487,14 @@ async function crawlMode(browser, mode, routes) {
   };
   // Remount the route so every click starts from the same fresh screen.
   const reset = async (route) => {
+    traffic.cause = `opening ${route}`;
     try {
       for (let i = 0; i < 3 && (await page.locator('[role="dialog"]').count()); i += 1)
         await page.keyboard.press('Escape');
       await navigate('/settings/usage');
       await navigate(route);
     } catch (error) {
-      if (!RELOADED.test(error.message)) throw error;
+      if (!reloaded(error)) throw error;
       await recover(route, error);
     }
     await arm();
@@ -463,7 +514,7 @@ async function crawlMode(browser, mode, routes) {
   /** One click from a prepared screen; `prepare` rebuilds the screen and returns the target. */
   const visit = (route, prefix, prepare) =>
     visitOnce(route, prefix, prepare).catch(async (error) => {
-      if (!RELOADED.test(error.message)) throw error;
+      if (!reloaded(error)) throw error;
       reloads += 1;
       await recover(route, error);
       return null;
@@ -476,6 +527,7 @@ async function crawlMode(browser, mode, routes) {
     if (Object.hasOwn(SKIPPED_BUTTONS, name.split(' > ').at(-1))) return null;
     const openDialogs = await dialogs().count();
     await arm();
+    traffic.cause = `the click on ${route} ${name}`;
     const problems = await clickAndCheck(button, route);
     if (!problems) {
       unclickable += 1;
@@ -491,7 +543,20 @@ async function crawlMode(browser, mode, routes) {
   };
 
   const seconds = {};
-  for (const route of routes) {
+  try {
+    for (const route of routes) {
+      await crawlRoute(route);
+      // No click judged it (every click missed, or the screen has none) and it is still open.
+      await failStalled(stalledRoute(traffic, STALLED_MS));
+    }
+  } catch (error) {
+    if (!(error instanceof CrawlStalled)) throw error;
+    findings.push({ key: `${mode} stalled`, detail: error.message });
+  }
+  await context.close();
+  return { mode, clicks, unclickable, reloads, findings, seconds };
+
+  async function crawlRoute(route) {
     const started = performance.now();
     // Pass 1: every enabled button on the fresh screen.
     await reset(route);
@@ -512,12 +577,14 @@ async function crawlMode(browser, mode, routes) {
     for (const opener of openers) {
       await reset(route);
       const openerName = await label(buttons().nth(opener)).catch(() => '?');
+      traffic.cause = `the click on ${route} ${openerName}`;
       await buttons()
         .nth(opener)
         .click({ timeout: 2_000 })
         .catch(() => {});
       for (let index = 0, total = await dialogButtons().count(); index < total; index += 1)
         await visit(route, `${openerName} > `, async () => {
+          traffic.cause = `the click on ${route} ${openerName}`;
           const button = buttons().nth(opener);
           await button.click({ timeout: 2_000 }).catch(() => {});
           await dialogs()
@@ -529,8 +596,6 @@ async function crawlMode(browser, mode, routes) {
     }
     seconds[route] = (performance.now() - started) / 1000;
   }
-  await context.close();
-  return { mode, clicks, unclickable, reloads, findings, seconds };
 }
 
 const backendPort = Number(process.env.OMNIVOICE_PORT) || 0;

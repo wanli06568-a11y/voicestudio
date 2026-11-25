@@ -4,9 +4,8 @@ import { ChevronDownIcon, DownloadIcon, LoaderCircleIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
-import { getBridge } from '@/components/bridge';
 import { PipelineFailure } from '@/components/pipeline-failure';
-import { apiPath, describeError, errorFromResponse } from '@/lib/api/client';
+import { apiPath, describeError } from '@/lib/api/client';
 import { saveExport } from '@/lib/export-history';
 import {
   BED_LEVEL_MAX,
@@ -58,16 +57,18 @@ export function DubExportPanel({ session, disabled }: { session: DubSession; dis
   const burnAllowed = session.generatedTiming !== 'stretch_video';
   const locked = disabled || saving;
   const subtitles = ['srt', 'vtt', 'ass'].includes(format);
+  const transcript = subtitles || format === 'txt';
   const ready =
     !!session.jobId &&
     !!track &&
-    (subtitles || (format === 'mp4' && undubbed)
+    (transcript || (format === 'mp4' && undubbed)
       ? session.segments.length > 0
       : session.tracks.length > 0);
   const labels: Record<DubExportFormat, string> = {
     mp4: t('exportModal.mp4_h264'),
     wav: t('exportModal.wav_lossless'),
     mp3: t('exportModal.mp3_compressed'),
+    txt: t('transcriptions.export_plain'),
     srt: 'SRT',
     vtt: 'VTT',
     ass: t('exportModal.subs_style_karaoke'),
@@ -80,7 +81,7 @@ export function DubExportPanel({ session, disabled }: { session: DubSession; dis
     setSaving(true);
     setError(null);
     try {
-      if (undubbed && (subtitles || format === 'mp4'))
+      if (undubbed && (transcript || format === 'mp4'))
         await syncDubTranscript(session.jobId!, session.segments);
       const request = dubExportRequest({
         jobId: session.jobId!,
@@ -95,18 +96,7 @@ export function DubExportPanel({ session, disabled }: { session: DubSession; dis
         bitrate,
       });
       const url = apiPath(request.path);
-      const bridge = getBridge();
-      if (bridge) await saveExport(url, request.name);
-      else {
-        const response = await fetch(url);
-        if (!response.ok) throw await errorFromResponse(response);
-        const objectUrl = URL.createObjectURL(await response.blob());
-        const anchor = document.createElement('a');
-        anchor.href = objectUrl;
-        anchor.download = request.name;
-        anchor.click();
-        setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
-      }
+      await saveExport(url, request.name);
     } catch (error) {
       setError(describeError(error));
     } finally {

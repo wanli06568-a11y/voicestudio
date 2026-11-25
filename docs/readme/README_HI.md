@@ -120,12 +120,12 @@
       <a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section"><img src="../assets/voicestudio-pro.svg" alt="" width="56" height="56" align="middle" /></a>&nbsp;&nbsp;<strong><a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section">VoiceStudio Pro</a></strong><br /><br />
       एक से ज़्यादा मशीनों पर सशुल्क क्लाइंट काम के लिए।
       <ul>
-        <li>आपके क्लाइंट काम के लिए व्यावसायिक लाइसेंस, ईमेल से भेजा जाता है</li>
+        <li>आपके क्लाइंट काम में VoiceStudio के कोड के लिए व्यावसायिक लाइसेंस, ईमेल से भेजा जाता है</li>
         <li>एक उपयोगकर्ता, एक साथ अधिकतम 3 डिवाइस</li>
         <li>अपने दूसरे GPU पर काम भेजें, जबकि आपके प्रोजेक्ट लोकल रहते हैं</li>
         <li>नई सुविधाएँ और सुधार सबसे पहले</li>
       </ul>
-      <sub>बंद-स्रोत बिल्ड, खाता ज़रूरी, 7 दिनों में पूरा रिफ़ंड। AGPL-3.0 ऐप मुफ़्त रहता है, उसकी शर्तों के तहत व्यावसायिक उपयोग सहित।</sub><br /><br />
+      <sub>बंद-स्रोत बिल्ड, खाता ज़रूरी, 7 दिनों में पूरा रिफ़ंड। AGPL-3.0 ऐप मुफ़्त रहता है, उसकी शर्तों के तहत व्यावसायिक उपयोग सहित। कोई भी लाइसेंस मॉडल वेट को कवर नहीं करता: डिफ़ॉल्ट OmniVoice वेट गैर-व्यावसायिक (CC-BY-NC) हैं, इसलिए क्लाइंट काम से पहले मॉडल मैनेजर में हर मॉडल का लाइसेंस जाँच लें।</sub><br /><br />
       <strong><a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section">Pro प्लान देखें →</a></strong>
     </td>
     <td width="50%" valign="top">
@@ -206,6 +206,8 @@ curl -fsSL https://voicestudio.sh/install | sh
 
 <details>
 <summary><img src="../../docs/assets/platforms/windows.svg" alt="" width="20" height="20" /> <strong>Windows</strong> · PowerShell · EXE</summary>
+
+प्रयोगात्मक [Windows ROCm सेटअप](../../docs/install/windows-rocm.md) केवल `gfx1030`, `gfx1031` या `gfx1032` लक्ष्य वाले चुनिंदा RDNA 2 RX 6000 GPU का समर्थन करता है; RX 6500 XT (`gfx1034`) इसमें शामिल नहीं है। अलग से निश्चित संस्करण वाले CTranslate2 बिल्ड में RX 6700 XT पर ट्रांसक्रिप्शन के लिए मूल `gfx1031` कर्नेल शामिल हैं; सेटअप GPU पर उनका वास्तविक निष्पादन जाँचता है। RX 6700 XT के परीक्षणों में मूल Torch वाक् निर्माण और PyTorch Whisper भी शामिल हैं। ROCm 10 पर faster-whisper सुरक्षित CPU चयन और CPU पर वापसी के लिए अलग इन्फरेंस प्रक्रिया इस्तेमाल करता है। अन्य कार्ड और कार्यभार गाइड में दी गई सत्यापन सीमाओं के अधीन हैं। प्रदर्शन प्रीसेट बदले हुए इंजन चयन को सहेजने से पहले ऑफलाइन चाइल्ड प्रक्रिया में रनटाइम की तत्परता जाँचते हैं और स्थापित रनटाइम विफल होने पर वैकल्पिक विकल्प बनाए रखते हैं।
 
 <blockquote>
 
@@ -499,9 +501,9 @@ https://github.com/debpalash/VoiceStudio/blob/main/docs/install/agent.md
 | सेटअप सहायता | [समस्या निवारण](../../docs/install/troubleshooting.md) · [मॉडल डाउनलोड](../../docs/downloading-models.md) |
 | गाइड | [कई वक्ताओं की डबिंग](../../docs/dubbing/multi-speaker-guide.md) · [भावपूर्ण आवाज़](../../docs/expressive-speech.md) · [डब किए गए ऑडियो का निर्यात](../../docs/dubbing/export.md) |
 | मॉडल और गुणवत्ता | [इंजन गाइड](../../docs/engines/README.md) · [whisper.cpp ASR](../../docs/engines/whisper-cpp.md) · [बेंचमार्क](../../docs/benchmarks.md) |
-| एकीकरण | [स्थानीय एपीआई](../../docs/speech-platform.md) · [MCP](../../docs/mcp.md) · [उदाहरण](../../examples/README.md) |
+| एकीकरण | [CLI](../../docs/install/script.md#terminal-command) · [स्थानीय एपीआई](../../docs/speech-platform.md) · [MCP](../../docs/mcp.md) · [उदाहरण](../../examples/README.md) |
 | फ़ोन ऐप्स | [आईओएस और एंड्रॉइड](../../docs/mobile.md) |
-| विकास | [योगदान](../../.github/CONTRIBUTING.md) ([अपने पहले पीआर से पहले CLA पर हस्ताक्षर करें](../../.github/CONTRIBUTING.md#contribution-licensing)) · [Changelog](../../CHANGELOG.md) |
+| विकास | [योगदान](../../.github/CONTRIBUTING.md) ([अपने पहले पीआर से पहले CLA पर हस्ताक्षर करें](../../.github/CONTRIBUTING.md#contribution-licensing)) · [Changelog](../../CHANGELOG.md) · [कोड साइनिंग नीति](../code-signing-policy.md) |
 
 एजेंट स्किल: `npx skills add debpalash/VoiceStudio` (ऑडियो कार्य के लिए **voicestudio** और रिपॉजिटरी के लिए **voicestudio-maintainer**)।
 

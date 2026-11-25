@@ -120,12 +120,12 @@ Todo lo anterior es gratis, se ejecuta en tu propio hardware y no necesita cuent
       <a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section"><img src="../assets/voicestudio-pro.svg" alt="" width="56" height="56" align="middle" /></a>&nbsp;&nbsp;<strong><a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section">VoiceStudio Pro</a></strong><br /><br />
       Para trabajo pagado para clientes en más de un equipo.
       <ul>
-        <li>Una licencia comercial para tu trabajo con clientes, enviada por correo</li>
+        <li>Una licencia comercial para el código de VoiceStudio en tu trabajo con clientes, enviada por correo</li>
         <li>Un usuario en hasta 3 dispositivos a la vez</li>
         <li>Envía trabajos a tus otras GPU mientras tus proyectos siguen en local</li>
         <li>Nuevas funciones y correcciones antes que nadie</li>
       </ul>
-      <sub>Versión de código cerrado, requiere cuenta, reembolso completo durante 7 días. La app AGPL-3.0 sigue siendo gratis, también para uso comercial según sus términos.</sub><br /><br />
+      <sub>Versión de código cerrado, requiere cuenta, reembolso completo durante 7 días. La app AGPL-3.0 sigue siendo gratis, también para uso comercial según sus términos. Ninguna de las dos licencias cubre los pesos de los modelos: los pesos predeterminados de OmniVoice son no comerciales (CC-BY-NC), así que revisa la licencia de cada modelo en Model Manager antes de trabajar para clientes.</sub><br /><br />
       <strong><a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section">Ver planes de Pro →</a></strong>
     </td>
     <td width="50%" valign="top">
@@ -206,6 +206,8 @@ La interfaz de usuario de la aplicación se ejecuta en Intel; conéctelo a un ba
 
 <details>
 <summary><img src="../../docs/assets/platforms/windows.svg" alt="" width="20" height="20" /> <strong>Windows</strong> · PowerShell · EXE</summary>
+
+La [configuración experimental de Windows ROCm](../../docs/install/windows-rocm.md) admite determinadas GPU RDNA 2 RX 6000 con objetivos `gfx1030`, `gfx1031` o `gfx1032`; la RX 6500 XT (`gfx1034`) queda excluida. La compilación de CTranslate2 con versión fijada por separado incluye kernels nativos `gfx1031` para transcribir en la RX 6700 XT; la configuración comprueba su ejecución real en la GPU. Las pruebas de la RX 6700 XT también cubren la generación de voz nativa con Torch y PyTorch Whisper. En ROCm 10, faster-whisper usa un proceso de inferencia separado para seleccionar la CPU o recurrir a ella con seguridad. Otras tarjetas y cargas de trabajo conservan los límites de validación de la guía. Los perfiles de rendimiento validan los cambios de motor en un proceso secundario sin conexión antes de guardarlos, manteniendo la alternativa si falla un entorno instalado.
 
 <blockquote>
 
@@ -499,9 +501,9 @@ https://github.com/debpalash/VoiceStudio/blob/main/docs/install/agent.md
 | Ayuda de configuración | [Solución de problemas](../../docs/install/troubleshooting.md) · [Descargas de modelos](../../docs/downloading-models.md) |
 | Guías | [Doblaje con varias voces](../../docs/dubbing/multi-speaker-guide.md) · [Voz expresiva](../../docs/expressive-speech.md) · [Exportar doblajes](../../docs/dubbing/export.md) |
 | Modelos y calidad | [Guías del motor](../../docs/engines/README.md) · [whisper.cpp ASR](../../docs/engines/whisper-cpp.md) · [Puntos de referencia](../../docs/benchmarks.md) |
-| Integraciones | [API local](../../docs/speech-platform.md) · [MCP](../../docs/mcp.md) · [Ejemplos](../../examples/README.md) |
+| Integraciones | [CLI](../../docs/install/script.md#terminal-command) · [API local](../../docs/speech-platform.md) · [MCP](../../docs/mcp.md) · [Ejemplos](../../examples/README.md) |
 | Aplicaciones de teléfono | [iOS y Android](../../docs/mobile.md) |
-| Desarrollo | [Contribuyendo](../../.github/CONTRIBUTING.md) ([firma el CLA](../../.github/CONTRIBUTING.md#contribution-licensing) antes de tu primer PR) · [Registro de cambios](../../CHANGELOG.md) |
+| Desarrollo | [Contribuyendo](../../.github/CONTRIBUTING.md) ([firma el CLA](../../.github/CONTRIBUTING.md#contribution-licensing) antes de tu primer PR) · [Registro de cambios](../../CHANGELOG.md) · [Política de firma de código](../code-signing-policy.md) |
 
 Habilidades para agentes: `npx skills add debpalash/VoiceStudio` (**voicestudio** para trabajar con audio y **voicestudio-maintainer** para el repositorio).
 

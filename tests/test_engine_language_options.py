@@ -38,7 +38,9 @@ def _app_translation_targets():
     root = Path(__file__).resolve().parents[1] / 'electron' / 'src'
     source = ((root / 'shared' / 'utils' / 'languages.js').read_text(encoding='utf-8')
               + (root / 'renderer' / 'src' / 'lib' / 'translation-targets.ts').read_text(encoding='utf-8'))
-    targets = re.findall(r"\{ code: '([^']+)', label: '([^']+)' \}", source)
+    targets = re.findall(r"""\{ code: ["']([^"']+)["'], label: ["']([^"']+)["'] \}""", source)
+    # Target-only entries (no Whisper vocabulary) must be found, whatever the quoting.
+    assert {'Cebuano', 'Kabyle', 'Uyghur'} <= {label for _, label in targets}
     assert len(targets) > 90, 'translation target lists moved; update this parser'
     return targets
 
@@ -215,3 +217,33 @@ def test_kokoro_guard_uses_installed_labels(monkeypatch, tts):
     assert backend._check_language('British English') is None
     assert backend._check_language('Auto') is None
     assert calls == ['British English']
+
+
+def test_translation_only_dub_targets_resolve_to_nllb_codes():
+    """Kabyle, Uyghur and Cebuano (#4058) are picker targets Whisper cannot hear."""
+    pytest.importorskip("transformers")
+    from api.routers.dub_translate import _nllb_language
+
+    assert _nllb_language("ceb") == "ceb_Latn"
+    assert _nllb_language("kab") == "kab_Latn"
+    assert _nllb_language("ug") == "uig_Arab"
+
+
+@pytest.mark.parametrize('language,expected', [
+    ('pt-BR', 'pt'), ('pt_br', 'pt'), ('PT-PT', 'pt'), ('es-MX', 'es'), ('en-US', 'en'),
+    ('zh-Hans', 'zh'), ('Portuguese (Brazil)', 'pt'), ('Portuguese (Portugal)', 'pt'),
+    ('Spanish (Mexico)', 'es'), ('xx-YY', None), ('Klingon (Empire)', None),
+])
+def test_omnivoice_resolves_region_tagged_and_variant_languages(language, expected):
+    """Region tags and picker variant names speak their base language instead of
+    silently falling back to language-agnostic mode."""
+    from omnivoice.models.omnivoice import _resolve_language
+    assert _resolve_language(language) == expected
+
+
+def test_every_picker_variant_name_resolves_for_omnivoice():
+    from core.language_variants import VARIANT_NAMES
+    from omnivoice.models.omnivoice import _resolve_language
+    for name, (_base, dialect) in VARIANT_NAMES.items():
+        assert _resolve_language(name) == dialect.split('-')[0]
+        assert _resolve_language(dialect) == dialect.split('-')[0]

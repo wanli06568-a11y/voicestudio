@@ -121,6 +121,14 @@ app_targets=()
 
 # ── Optional: the prebuilt app installed by `curl … | sh` (default mode) ────
 if [ "$REMOVE_APP" -eq 1 ]; then
+  command_path="$HOME/.local/bin/voicestudio"
+  if [ -L "$command_path" ]; then
+    command_target="$(readlink "$command_path")"
+    case "$command_target" in
+      "$HOME/.local/bin/VoiceStudio"|"/Applications/VoiceStudio.app/Contents/Resources/cli/voicestudio"|"$HOME/Applications/VoiceStudio.app/Contents/Resources/cli/voicestudio")
+        app_targets+=("$command_path") ;;
+    esac
+  fi
   case "$OS" in
     Darwin)
       for app_dir in "/Applications/VoiceStudio.app" "$HOME/Applications/VoiceStudio.app"; do
@@ -174,42 +182,153 @@ fi
 # If — and only if — the user opted in to anonymous analytics, send a single
 # best-effort `app_uninstalled` event before the data (and the consent record
 # it lives in) goes away. The backend writes analytics_info.json next to
-# prefs.json ONLY while analytics is enabled (explicit consent + a build that
-# ships a token) and deletes it on opt-out, so the file's presence is itself
-# consent-gated; the prefs.json check is belt and braces. Content-free: the
-# event carries the app version, the OS name, and the random per-install id —
-# nothing else. Never blocks or fails the uninstall (2s timeout, silent
-# failure). Not opted in ⇒ nothing is sent and nothing is printed.
+# prefs.json ONLY while analytics is enabled and deletes it on opt-out, so the
+# file's presence is itself consent-gated; the prefs.json check is belt and
+# braces. Content-free: the app version, the OS name and the random per-install
+# profile. Never blocks the uninstall (2s timeout, silent failure). Not opted
+# in ⇒ nothing is sent and nothing is printed.
 send_uninstall_ping() {
-  local info="$DATA_DIR/analytics_info.json" prefs="$DATA_DIR/prefs.json"
+  local info="$DATA_DIR/analytics_info.json"
+  local prefs="$DATA_DIR/prefs.json"
   [ -f "$info" ] && [ -f "$prefs" ] || return 0
   grep -q '"analytics_enabled"[[:space:]]*:[[:space:]]*true' "$prefs" 2>/dev/null || return 0
   command -v curl >/dev/null 2>&1 || return 0
-  local token host distinct_id app_version platform
-  token=$(sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$info" | head -n1)
-  host=$(sed -n 's/.*"host"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$info" | head -n1)
-  distinct_id=$(sed -n 's/.*"distinct_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$info" | head -n1)
-  app_version=$(sed -n 's/.*"app_version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$info" | head -n1)
-  platform=$(sed -n 's/.*"platform"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$info" | head -n1)
-  [ -n "$token" ] && [ -n "$host" ] && [ -n "$distinct_id" ] || return 0
+  # Prefer a system Python; otherwise the app's own runtime interpreter, so an
+  # opted-in user without python3 on PATH is not silently skipped.
+  local py
+  py=$(command -v python3 2>/dev/null || true)
+  if [ -z "$py" ]; then
+    local candidate="${ELECTRON_RUNTIME:-$electron_user_data/runtime}/project/.venv/bin/python"
+    [ -x "$candidate" ] && py=$candidate
+  fi
+  [ -n "$py" ] || return 0
+  local prepared host agent origin body
+  prepared=$("$py" - "$info" 2>/dev/null <<'PYTHON'
+import json, os, re, sys, time, uuid
+from urllib.parse import urlsplit
+try:
+    if os.environ.get("OMNIVOICE_ANALYTICS_DISABLED", "").strip().lower() in {"1", "true", "yes", "on"}:
+        raise ValueError()
+    if "SUPERMETRY_SITE_ID" in os.environ and not os.environ["SUPERMETRY_SITE_ID"].strip():
+        raise ValueError()
+    with open(sys.argv[1], encoding="utf-8") as f:
+        info = json.load(f)
+    host, url = info["host"].rstrip("/"), info["appUrl"].rstrip("/")
+    for value in (host, url):
+        parsed = urlsplit(value)
+        if (parsed.scheme not in {"http", "https"} or not parsed.hostname
+                or parsed.username or parsed.password or parsed.query or parsed.fragment
+                or any(ord(c) < 33 for c in value)):
+            raise ValueError()
+    if (urlsplit(host).path or not info.get("site") or info.get("policy") != "opt-in"
+            or not re.fullmatch(r"install_[a-f0-9]{32}", info.get("profile_id", ""))):
+        raise ValueError()
+    agent = info["user_agent"]
+    if not agent.startswith("Mozilla/5.0 (") or any(ord(c) < 32 for c in agent):
+        raise ValueError()
+    props = {k: info[k] for k in ("app_version", "platform") if isinstance(info.get(k), str) and len(info[k]) <= 64}
+    event = {"v": 1, "id": uuid.uuid4().hex, "ts": int(time.time() * 1000),
+             "site": info["site"], "name": "app_uninstalled", "url": url + "/uninstall",
+             "profile_id": info["profile_id"], "props": props}
+    parsed = urlsplit(url)
+    print(host)
+    print(agent)
+    print(parsed.scheme + "://" + parsed.netloc)
+    print(json.dumps(event, separators=(",", ":"), allow_nan=False))
+except Exception:
+    sys.exit(1)
+PYTHON
+  ) || return 0
+  host=$(printf '%s\n' "$prepared" | sed -n '1p')
+  agent=$(printf '%s\n' "$prepared" | sed -n '2p')
+  origin=$(printf '%s\n' "$prepared" | sed -n '3p')
+  body=$(printf '%s\n' "$prepared" | sed -n '4p')
+  [ -n "$host" ] && [ -n "$body" ] || return 0
   echo "Sending anonymous uninstall ping (you opted in to analytics)."
-  curl -m 2 -s -o /dev/null -X POST "$host/capture/" \
-    -H 'Content-Type: application/json' \
-    -d "{\"api_key\":\"$token\",\"event\":\"app_uninstalled\",\"distinct_id\":\"$distinct_id\",\"properties\":{\"app_version\":\"$app_version\",\"platform\":\"$platform\"}}" \
-    || true
+  curl -m 2 -s -o /dev/null -X POST "$host/api/public/v1/events" \
+    -H 'Content-Type: application/json' -H "Origin: $origin" -A "$agent" \
+    -d "$body" || true
 }
 send_uninstall_ping
 
 # ── Delete ──────────────────────────────────────────────────────────────────
+# Resolve through symlinks when the path exists, so the guard sees what a trailing
+# slash would have let `rm -rf` follow. Two shell details matter here: CDPATH is
+# cleared because `cd` otherwise echoes the directory it picked, and a relative
+# operand is prefixed with ./ because `cd -` visits OLDPWD instead of a directory
+# named "-". A path that does not exist resolves to itself.
+resolve_delete_target() {
+  local path="$1" operand
+  if [ -n "$path" ] && [ -d "$path" ]; then
+    case "$path" in
+      /*) operand="$path" ;;
+      *) operand="./$path" ;;
+    esac
+    (unset CDPATH && cd -P -- "$operand" 2>/dev/null && pwd -P) || printf '%s\n' "$path"
+  else
+    printf '%s\n' "$path"
+  fi
+}
+
+# An override can name any folder (OMNIVOICE_DATA_DIR=$HOME is enough), so every
+# deletion target is checked first. These shapes are never a VoiceStudio folder:
+# the filesystem root, the home directory, and any parent of home — removing
+# /home, /Users or "$HOME/.." takes unrelated data with it.
+#
+# Home is resolved once, before the first deletion, because a deleted app folder can
+# hold the symlink that named it; resolving it per call would compare the remaining
+# targets against a link that no longer exists.
+RESOLVED_HOME=$(resolve_delete_target "${HOME:-}")
+
+# A target that carries a line break cannot be compared faithfully: command
+# substitution drops trailing newlines, so the path that is checked and the path
+# that is removed could differ. No supported data location contains one.
+has_line_break() {
+  [ "$(printf '%s' "$1" | tr -d '\n\r')" != "$1" ]
+}
+
+is_unsafe_delete_root() {
+  local target home="$RESOLVED_HOME"
+  target=$(resolve_delete_target "$1")
+  [ -z "$target" ] && return 0
+  # The filesystem root under any alias ("/usr/..", "/.") — its pattern below
+  # would be "//*", which matches nothing.
+  [ "$target" = "/" ] && return 0
+  [ -z "$home" ] && return 1
+  [ "$target" = "$home" ] && return 0
+  case "$home/" in "$target"/*) return 0 ;; esac
+  return 1
+}
+
+# A trailing slash changes what `rm -rf` does with a symlinked folder: "dir/"
+# recurses into the link target while "dir" removes only the link. The strip runs
+# in place on the variable, never through command substitution, which would also
+# drop a trailing newline and delete a different directory than the one named.
 deleted=0
 for t in "${app_targets[@]:-}"; do
   [ -z "$t" ] && continue
+  while [ "${t%/}" != "$t" ]; do t="${t%/}"; done
+  if has_line_break "$t"; then
+    echo "Refusing to remove $t — the path contains a line break, which cannot be checked safely." >&2
+    continue
+  fi
+  if is_unsafe_delete_root "$t"; then
+    echo "Refusing to remove $t — that is the home directory, a parent of it, or the filesystem root, not a VoiceStudio folder." >&2
+    continue
+  fi
   echo "Removing $t"
   rm -rf -- "$t" && deleted=$((deleted + 1))
 done
 if [ "$INCLUDE_MODELS" -eq 1 ] && [ "$models_present" -eq 1 ]; then
-  echo "Removing $MODELS_DIR"
-  rm -rf -- "$MODELS_DIR" && deleted=$((deleted + 1))
+  while [ "${MODELS_DIR%/}" != "$MODELS_DIR" ]; do MODELS_DIR="${MODELS_DIR%/}"; done
+  if has_line_break "$MODELS_DIR"; then
+    echo "Refusing to remove $MODELS_DIR — the path contains a line break, which cannot be checked safely." >&2
+  elif is_unsafe_delete_root "$MODELS_DIR"; then
+    echo "Refusing to remove $MODELS_DIR — that is the home directory, a parent of it, or the filesystem root, not a model cache." >&2
+  else
+    echo "Removing $MODELS_DIR"
+    rm -rf -- "$MODELS_DIR" && deleted=$((deleted + 1))
+  fi
 elif [ "$models_present" -eq 1 ]; then
   echo "Kept model cache ($MODELS_DIR) — re-run with --models to remove it."
 fi

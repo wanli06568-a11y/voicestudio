@@ -76,16 +76,25 @@ async function settled(route) {
   let quietSince = Date.now();
   let lastChange = -1;
   for (;;) {
-    const change = await page.evaluate(() => window.__lastDomChange);
-    if (pending.size || change !== lastChange) {
+    // A dev-server reload (late dependency optimisation) destroys the context mid-poll:
+    // treat it as "still changing" and poll again on the new document.
+    const change = await page
+      .evaluate(() => window.__lastDomChange)
+      .catch((error) => {
+        if (!/Execution context was destroyed|navigation/i.test(String(error))) throw error;
+        return NaN;
+      });
+    if (pending.size || Number.isNaN(change) || change !== lastChange) {
       lastChange = change;
       quietSince = Date.now();
     } else if (Date.now() - quietSince >= quietMs) {
       return;
     }
     if (Date.now() > deadline) {
+      // Name what it waited on, so a CI timeout points at its cause.
+      const urls = [...pending].map((request) => request.url()).join(', ');
       throw new Error(
-        `${route} never settled: ${pending.size} requests pending or DOM still changing`,
+        `${route} never settled: ${pending.size} requests pending${urls ? ` (${urls})` : ''} or DOM still changing`,
       );
     }
     await new Promise((resolve) => setTimeout(resolve, 50));

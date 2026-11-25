@@ -117,6 +117,13 @@ function detailToString(detail: unknown): string {
     detail &&
     typeof detail === "object" &&
     "code" in detail &&
+    detail.code === "dub_untranslated"
+  )
+    return tr("dubIntegrity.untranslated");
+  if (
+    detail &&
+    typeof detail === "object" &&
+    "code" in detail &&
     detail.code === "source_language_required"
   )
     return tr("workflowRun.invalid_language");
@@ -274,6 +281,16 @@ export async function apiFetch(
           new CustomEvent("ov:auth-required", { detail: { mode } }),
         );
       }
+    }
+    // The share PIN limiter answers 429 "Too many wrong PINs" (with
+    // Retry-After) before it compares the PIN: back to the PIN form with the wait.
+    if (__WEB_DEPLOYMENT__ && error.status === 429 && detail.includes("wrong pin")) {
+      const wait = Number(res.headers.get("Retry-After"));
+      window.dispatchEvent(
+        new CustomEvent("ov:auth-required", {
+          detail: { mode: "pin", retryAfter: Number.isFinite(wait) && wait > 0 ? wait : 0 },
+        }),
+      );
     }
     throw error;
   }

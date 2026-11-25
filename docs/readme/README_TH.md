@@ -120,12 +120,12 @@
       <a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section"><img src="../assets/voicestudio-pro.svg" alt="" width="56" height="56" align="middle" /></a>&nbsp;&nbsp;<strong><a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section">VoiceStudio Pro</a></strong><br /><br />
       สำหรับงานลูกค้าที่มีค่าจ้างบนเครื่องมากกว่าหนึ่งเครื่อง
       <ul>
-        <li>ใบอนุญาตเชิงพาณิชย์สำหรับงานลูกค้า ส่งให้ทางอีเมล</li>
+        <li>ใบอนุญาตเชิงพาณิชย์สำหรับโค้ดของ VoiceStudio ในงานลูกค้า ส่งให้ทางอีเมล</li>
         <li>ผู้ใช้หนึ่งคนบนอุปกรณ์สูงสุด 3 เครื่องพร้อมกัน</li>
         <li>ส่งงานไปยัง GPU เครื่องอื่นของคุณ โดยโปรเจกต์ยังอยู่ในเครื่อง</li>
         <li>ได้ฟีเจอร์และการแก้ไขใหม่ก่อนใคร</li>
       </ul>
-      <sub>รุ่นซอร์สปิด ต้องมีบัญชี คืนเงินเต็มจำนวนภายใน 7 วัน แอป AGPL-3.0 ยังคงฟรี รวมถึงการใช้เชิงพาณิชย์ตามเงื่อนไขของสัญญาอนุญาต</sub><br /><br />
+      <sub>รุ่นซอร์สปิด ต้องมีบัญชี คืนเงินเต็มจำนวนภายใน 7 วัน แอป AGPL-3.0 ยังคงฟรี รวมถึงการใช้เชิงพาณิชย์ตามเงื่อนไขของสัญญาอนุญาต ใบอนุญาตทั้งสองไม่ครอบคลุมน้ำหนักของโมเดล: น้ำหนัก OmniVoice เริ่มต้นเป็นแบบไม่เชิงพาณิชย์ (CC-BY-NC) จึงควรตรวจสอบใบอนุญาตของแต่ละโมเดลใน Model Manager ก่อนทำงานให้ลูกค้า</sub><br /><br />
       <strong><a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section">ดูแผน Pro →</a></strong>
     </td>
     <td width="50%" valign="top">
@@ -206,6 +206,8 @@ UI ของแอปทำงานบน Intel เชื่อมต่อก�
 
 <details>
 <summary><img src="../../docs/assets/platforms/windows.svg" alt="" width="20" height="20" /> <strong>Windows</strong> · PowerShell · EXE</summary>
+
+[การตั้งค่า Windows ROCm แบบทดลอง](../../docs/install/windows-rocm.md) รองรับ GPU RDNA 2 RX 6000 บางรุ่นที่มีเป้าหมายเป็น `gfx1030`, `gfx1031` หรือ `gfx1032` โดยไม่รวม RX 6500 XT (`gfx1034`) บิลด์ CTranslate2 ที่ตรึงเวอร์ชันแยกต่างหากมีเคอร์เนล `gfx1031` แบบเนทีฟสำหรับการถอดเสียงบน RX 6700 XT โดยขั้นตอนตั้งค่าจะตรวจสอบการทำงานจริงของเคอร์เนลบน GPU การทดสอบ RX 6700 XT ยังครอบคลุมการสร้างเสียงพูดด้วย Torch แบบเนทีฟและ PyTorch Whisper ด้วย faster-whisper บน ROCm 10 ใช้กระบวนการอนุมานแยกต่างหากเพื่อให้เลือก CPU และสลับกลับไปใช้ CPU ได้อย่างปลอดภัย การ์ดและงานประเภทอื่นยังอยู่ภายใต้ข้อจำกัดการตรวจสอบในคู่มือ ค่าประสิทธิภาพที่ตั้งไว้ล่วงหน้าจะตรวจสอบความพร้อมของรันไทม์สำหรับเอนจินที่เปลี่ยนในกระบวนการลูกแบบออฟไลน์ก่อนบันทึก และคงทางเลือกสำรองไว้หากรันไทม์ที่ติดตั้งล้มเหลว
 
 <blockquote>
 
@@ -499,9 +501,9 @@ https://github.com/debpalash/VoiceStudio/blob/main/docs/install/agent.md
 | ความช่วยเหลือในการติดตั้ง | [การแก้ไขปัญหา](../../docs/install/troubleshooting.md) · [ดาวน์โหลดแบบจำลอง](../../docs/downloading-models.md) |
 | คู่มือ | [การพากย์เสียงสำหรับผู้พูดหลายคน](../../docs/dubbing/multi-speaker-guide.md) · [เสียงพูดที่แสดงอารมณ์](../../docs/expressive-speech.md) · [ส่งออกเสียงพากย์](../../docs/dubbing/export.md) |
 | โมเดลและคุณภาพ | [คู่มือเครื่องยนต์](../../docs/engines/README.md) · [whisper.cpp ASR](../../docs/engines/whisper-cpp.md) · [เกณฑ์มาตรฐาน](../../docs/benchmarks.md) |
-| การเชื่อมต่อกับเครื่องมืออื่น | [API ท้องถิ่น](../../docs/speech-platform.md) · [MCP](../../docs/mcp.md) · [ตัวอย่าง](../../examples/README.md) |
+| การเชื่อมต่อกับเครื่องมืออื่น | [CLI](../../docs/install/script.md#terminal-command) · [API ท้องถิ่น](../../docs/speech-platform.md) · [MCP](../../docs/mcp.md) · [ตัวอย่าง](../../examples/README.md) |
 | แอปบนโทรศัพท์ | [iOS และ Android](../../docs/mobile.md) |
-| การพัฒนา | [การสนับสนุน](../../.github/CONTRIBUTING.md) ([ลงนาม CLA](../../.github/CONTRIBUTING.md#contribution-licensing) ก่อน PR ครั้งแรกของคุณ) · [บันทึกการเปลี่ยนแปลง](../../CHANGELOG.md) |
+| การพัฒนา | [การสนับสนุน](../../.github/CONTRIBUTING.md) ([ลงนาม CLA](../../.github/CONTRIBUTING.md#contribution-licensing) ก่อน PR ครั้งแรกของคุณ) · [บันทึกการเปลี่ยนแปลง](../../CHANGELOG.md) · [นโยบายการลงนามโค้ด](../code-signing-policy.md) |
 
 ทักษะสำหรับเอเจนต์: `npx skills add debpalash/VoiceStudio` (**voicestudio** สำหรับงานเสียง และ **voicestudio-maintainer** สำหรับดูแลคลังโค้ด)
 

@@ -100,7 +100,9 @@ Supermetry and Spicrawl with explicit sponsor credits and individual links.
   and keeps the previous completed output until replacement succeeds. Volume
   changes remix existing speech without running the model again. Sources
   stay on the phone until you delete the job. Older Android jobs whose sources
-  were already removed must be imported again.
+  were already removed must be imported again. Clip/stem package exports check
+  available space on the output volume and stop before writing package media
+  when space is insufficient or cannot be determined.
 - **Advanced computer dubbing**: use installed speaker-analysis models, review
   the cast, regenerate a language with the chosen voices and timing mode, and
   export selected tracks, background-preserving mixes, burned subtitles, dual
@@ -164,6 +166,22 @@ uses the phone translation model. Voice designs save their generated sample, tra
 are limited to 30 seconds; longer design results remain playable/shareable.
 
 Stories, books, workflows and queued dubs keep completed work on disk. Android
+keeps long Stories and Audiobook manuscripts in a scrolling editor and retains
+the complete local draft and its settings across activity recreation. Checkpoints
+are read and written off the UI thread. Rotation keeps pending edits and retries
+failed writes. After process death, a small local reference restores that
+project's last complete checkpoint. If a new project's first checkpoint has not
+succeeded, Retry cannot restore the preceding project through the new reference;
+older files are preserved and explicit New remains available. New drafts save
+only that reference.
+An older app's existing inline recovery snapshot is retained temporarily while
+its checkpoint migration is pending, then replaced by the durable reference;
+explicitly starting or selecting a different project does not carry that old
+snapshot forward. A failed load offers Retry or an
+explicit new draft without deleting the unreadable checkpoint. Retired unsaved
+drafts are removed only after their known recovery references are released;
+unrecognized files are preserved. Autosave and project switching use separate temporary files, preventing save failures when their metadata writes overlap. Deleting a saved project also removes its draft
+checkpoint. Android
 runs these through foreground workers with progress and Cancel. iOS owns running
 jobs independently of screens. On supported iOS 26+ devices, GPU work requests
 continued processing with the signed background GPU entitlement; the UI only
@@ -212,7 +230,14 @@ an unapproved voice or open a file/URL. Keep VoiceStudio active on this screen.
 Open **Models** and download what you need. Nothing downloads until you tap
 it; model files come from pinned Hugging Face revisions or an explicitly listed
 GitHub release component and are checked before use. Wi-Fi only unless
-you allow mobile data.
+you allow mobile data. Downloads follow VoiceStudio’s default network route and
+use an active VPN when its configuration includes VoiceStudio. A per-app VPN
+that excludes VoiceStudio does not carry its downloads; the app does not change
+network bindings to bypass a tunnel. Android's Wi-Fi-only
+policy requires an unmetered Wi-Fi or Ethernet route, including the VPN's own
+underlying route. A metered tunnel or one whose underlying route is unknown
+remains waiting unless you allow mobile data. Network changes and restored
+queues retain saved partial downloads.
 
 Concurrent downloads reserve their combined remaining disk space. If they will
 not fit together, finish or cancel one before starting another; completed ranges

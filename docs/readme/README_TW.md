@@ -120,12 +120,12 @@
       <a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section"><img src="../assets/voicestudio-pro.svg" alt="" width="56" height="56" align="middle" /></a>&nbsp;&nbsp;<strong><a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section">VoiceStudio Pro</a></strong><br /><br />
       適合在多台機器上承接付費客戶專案。
       <ul>
-        <li>用於客戶專案的商業授權，透過電子郵件寄給你</li>
+        <li>用於客戶專案、涵蓋 VoiceStudio 程式碼的商業授權，透過電子郵件寄給你</li>
         <li>一位使用者，最多同時使用 3 台裝置</li>
         <li>把工作傳送到你的其他 GPU，專案仍留在本機</li>
         <li>搶先取得新功能和修正</li>
       </ul>
-      <sub>閉源版本，需要帳號，7 天內可全額退款。AGPL-3.0 應用程式依然免費，也可依其條款用於商業用途。</sub><br /><br />
+      <sub>閉源版本，需要帳號，7 天內可全額退款。AGPL-3.0 應用程式依然免費，也可依其條款用於商業用途。兩種授權都不涵蓋模型權重：預設的 OmniVoice 權重僅限非商業用途（CC-BY-NC），因此在進行客戶專案前，請先在模型管理器中查看每個模型的授權。</sub><br /><br />
       <strong><a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section">查看 Pro 方案 →</a></strong>
     </td>
     <td width="50%" valign="top">
@@ -206,6 +206,8 @@ Intel Mac 可執行應用介面；請連線另一臺電腦上的 VoiceStudio 後
 
 <details>
 <summary><img src="../../docs/assets/platforms/windows.svg" alt="" width="20" height="20" /> <strong>Windows</strong> · PowerShell · EXE</summary>
+
+實驗性的 [Windows ROCm 設定](../../docs/install/windows-rocm.md)支援目標為 `gfx1030`、`gfx1031` 或 `gfx1032` 的部分 RDNA 2 RX 6000 顯示卡，不包括 RX 6500 XT（`gfx1034`）。個別固定版本的 CTranslate2 組建包含用於 RX 6700 XT 轉錄的原生 `gfx1031` 核心；設定程序會檢查 GPU 核心的實際執行。RX 6700 XT 測試也涵蓋原生 Torch 語音生成與 PyTorch Whisper。ROCm 10 的 faster-whisper 使用獨立的推論程序，以安全地選擇 CPU 或回退至 CPU。其他顯示卡與工作負載仍受指南中驗證範圍的限制。效能預設會在儲存已變更的引擎選擇前，透過離線子程序驗證執行環境的就緒狀態，並在已安裝的執行環境失敗時保留備援方案。
 
 <blockquote>
 
@@ -501,9 +503,9 @@ https://github.com/debpalash/VoiceStudio/blob/main/docs/install/agent.md
 | 安裝幫助 | [故障排查](../../docs/install/troubleshooting.md) · [模型下載](../../docs/downloading-models.md) |
 | 指南 | [多說話人配音](../../docs/dubbing/multi-speaker-guide.md) · [富有表現力的語音](../../docs/expressive-speech.md) · [匯出配音](../../docs/dubbing/export.md) |
 | 模型與音質 | [引擎指南](../../docs/engines/README.md) · [whisper.cpp ASR](../../docs/engines/whisper-cpp.md) · [效能基準](../../docs/benchmarks.md) |
-| 整合 | [本地 API](../../docs/speech-platform.md) · [MCP](../../docs/mcp.md) · [示例](../../examples/README.md) |
+| 整合 | [CLI](../../docs/install/script.md#terminal-command) · [本地 API](../../docs/speech-platform.md) · [MCP](../../docs/mcp.md) · [示例](../../examples/README.md) |
 | 手機應用 | [iOS 與 Android](../../docs/mobile.md) |
-| 開發 | [參與貢獻](../../.github/CONTRIBUTING.md)（首次提交 PR 前請[簽署 CLA](../../.github/CONTRIBUTING.md#contribution-licensing)）· [更新日誌](../../CHANGELOG.md) |
+| 開發 | [參與貢獻](../../.github/CONTRIBUTING.md)（首次提交 PR 前請[簽署 CLA](../../.github/CONTRIBUTING.md#contribution-licensing)）· [更新日誌](../../CHANGELOG.md) · [程式碼簽署政策](../code-signing-policy.md) |
 
 智慧體技能：`npx skills add debpalash/VoiceStudio`（音訊工作用 **voicestudio**，倉庫維護用 **voicestudio-maintainer**）。
 

@@ -121,12 +121,12 @@
       <a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section"><img src="../assets/voicestudio-pro.svg" alt="" width="56" height="56" align="middle" /></a>&nbsp;&nbsp;<strong><a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section">VoiceStudio Pro</a></strong><br /><br />
       複数のマシンで有償のクライアント業務を行う方に。
       <ul>
-        <li>クライアント業務向けの商用ライセンスをメールでお届け</li>
+        <li>クライアント業務での VoiceStudio のコード向け商用ライセンスをメールでお届け</li>
         <li>1 ユーザーにつき同時に最大 3 台のデバイス</li>
         <li>プロジェクトはローカルのまま、ジョブを他の GPU に送信</li>
         <li>新機能と修正をいち早く利用</li>
       </ul>
-      <sub>クローズドソース版、アカウント必須、7 日間の全額返金。AGPL-3.0 版アプリは、その条件に基づく商用利用を含めて引き続き無料です。</sub><br /><br />
+      <sub>クローズドソース版、アカウント必須、7 日間の全額返金。AGPL-3.0 版アプリは、その条件に基づく商用利用を含めて引き続き無料です。どちらのライセンスもモデルの重みは対象外です。標準の OmniVoice の重みは非商用（CC-BY-NC）のため、クライアント業務の前にモデルマネージャーで各モデルのライセンスをご確認ください。</sub><br /><br />
       <strong><a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section">Pro のプランを見る →</a></strong>
     </td>
     <td width="50%" valign="top">
@@ -207,6 +207,8 @@ Intel Mac ではアプリの UI を利用できます。別のコンピュータ
 
 <details>
 <summary><img src="../../docs/assets/platforms/windows.svg" alt="" width="20" height="20" /> <strong>Windows</strong> · PowerShell · EXE</summary>
+
+実験的な [Windows ROCm セットアップ](../../docs/install/windows-rocm.md)は、ターゲットが `gfx1030`、`gfx1031`、`gfx1032` の一部の RDNA 2 RX 6000 GPU に対応しています。RX 6500 XT（`gfx1034`）は対象外です。個別にバージョンを固定した CTranslate2 ビルドには、RX 6700 XT での文字起こし用のネイティブ `gfx1031` カーネルが含まれ、セットアップ時に GPU カーネルの実際の実行を確認します。RX 6700 XT のテストには、ネイティブ Torch 音声生成と PyTorch Whisper も含まれます。ROCm 10 の faster-whisper は推論を別プロセスで行い、安全な CPU 選択と CPU へのフォールバックを維持します。他のカードや処理には、ガイドに記載された検証範囲の制限が適用されます。パフォーマンスプリセットは、変更されたエンジン選択を保存する前にオフラインの子プロセスで実行環境の準備状況を検証し、インストール済み環境で障害が起きた場合もフォールバックを維持します。
 
 <blockquote>
 
@@ -502,9 +504,9 @@ https://github.com/debpalash/VoiceStudio/blob/main/docs/install/agent.md
 | セットアップのヘルプ | [トラブルシューティング](../../docs/install/troubleshooting.md) · [モデルのダウンロード](../../docs/downloading-models.md) |
 | ガイド | [複数話者の吹き替え](../../docs/dubbing/multi-speaker-guide.md) · [表現豊かな音声](../../docs/expressive-speech.md) · [吹き替えの書き出し](../../docs/dubbing/export.md) |
 | モデルと音質 | [エンジンガイド](../../docs/engines/README.md) · [whisper.cpp ASR](../../docs/engines/whisper-cpp.md) · [ベンチマーク](../../docs/benchmarks.md) |
-| 連携 | [ローカル API](../../docs/speech-platform.md) · [MCP](../../docs/mcp.md) · [サンプル](../../examples/README.md) |
+| 連携 | [CLI](../../docs/install/script.md#terminal-command) · [ローカル API](../../docs/speech-platform.md) · [MCP](../../docs/mcp.md) · [サンプル](../../examples/README.md) |
 | スマートフォンアプリ | [iOS と Android](../../docs/mobile.md) |
-| 開発 | [コントリビューション](../../.github/CONTRIBUTING.md)（初めての PR の前に [CLA への署名](../../.github/CONTRIBUTING.md#contribution-licensing)が必要です）· [変更履歴](../../CHANGELOG.md) |
+| 開発 | [コントリビューション](../../.github/CONTRIBUTING.md)（初めての PR の前に [CLA への署名](../../.github/CONTRIBUTING.md#contribution-licensing)が必要です）· [変更履歴](../../CHANGELOG.md) · [コード署名ポリシー](../code-signing-policy.md) |
 
 エージェントスキル：`npx skills add debpalash/VoiceStudio`（音声作業には **voicestudio**、リポジトリのメンテナンスには **voicestudio-maintainer**）。
 

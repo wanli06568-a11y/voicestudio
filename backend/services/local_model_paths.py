@@ -138,21 +138,27 @@ def validate(family: str, engine_id: str, raw_path: str, *, _budget: dict | None
                 raise LocalModelError("This folder is not an OmniVoice checkpoint (expected model_type=omnivoice and llm_config)")
             asset = "audio_tokenizer"
         else:
-            # The GUI accepts the verified quantized Qwen VoiceDesign layout.
+            # The GUI accepts the verified quantized Qwen Base and VoiceDesign layouts.
             # A repository name containing 'mlx' does not prove conversion.
             quant = metadata.get("quantization")
             if (metadata.get("model_type") != "qwen3_tts"
-                    or metadata.get("tts_model_type") != "voice_design"
+                    or metadata.get("tts_model_type") not in ("base", "voice_design")
                     or not isinstance(quant, dict)
                     or quant.get("bits") not in (2, 3, 4, 5, 6, 8)
                     or not isinstance(quant.get("group_size"), int)
                     or quant["group_size"] <= 0):
-                raise LocalModelError("Choose a quantized MLX Qwen3-TTS VoiceDesign checkpoint, not native Qwen or Base weights")
+                raise LocalModelError("Choose a quantized MLX Qwen3-TTS Base or VoiceDesign checkpoint")
             asset = "speech_tokenizer"
         if not _has_weights(path, budget=_budget):
             raise LocalModelError("The selected local model folder has missing or unsupported weight files")
-        if not _safe_asset(path / "tokenizer.json").is_file():
-            raise LocalModelError("The local checkpoint is missing tokenizer.json")
+        has_tokenizer = _safe_asset(path / "tokenizer.json").is_file()
+        if not has_tokenizer and engine_id == "mlx-audio":
+            # Qwen can ship the slow tokenizer's vocabulary and BPE merges.
+            has_tokenizer = all(_safe_asset(path / name).is_file() for name in (
+                "tokenizer_config.json", "vocab.json", "merges.txt",
+            ))
+        if not has_tokenizer:
+            raise LocalModelError("The local checkpoint is missing text tokenizer files")
         _metadata(path / asset, budget=_budget)
         if not _has_weights(path / asset, budget=_budget):
             raise LocalModelError(f"The local checkpoint is missing {asset} weights")
@@ -338,6 +344,36 @@ def clear(family: str, engine_id: str) -> None:
         prefs.set_(PREF_KEY, current)
 
 
+_FINGERPRINT_MAX_FILES = 5000
+
+
+def _weights_fingerprint(path: str | None) -> tuple:
+    """Every file under the folder (relative path, size, mtime), so replacing any
+    weight, nested tokenizer files included, makes a re-save reload while a plain
+    re-save does not. A tree of more than _FINGERPRINT_MAX_FILES entries never matches."""
+    from core.model_fingerprint import tree_fingerprint
+    return tree_fingerprint(path, max_entries=_FINGERPRINT_MAX_FILES)
+
+
+def loading_fingerprint(path: str) -> tuple:
+    """Snapshot a local folder right before an engine loads it (see note_loaded)."""
+    return _weights_fingerprint(path)
+
+
+def note_loaded(family: str, engine_id: str, path: str, fingerprint: tuple) -> None:
+    """Record the folder an engine finished loading, so the first re-save after a
+    restart can keep it warm when nothing changed. Called only after a successful
+    load, with the snapshot taken before it, and only while that folder is still
+    the saved one: an overlapping load or change never records stale weights."""
+    if get(family, engine_id) == path:
+        _APPLIED[(family, engine_id)] = fingerprint
+
+
+# Fingerprint of the folder each engine last switched to, so a re-save can tell
+# whether the weights it loads would differ.
+_APPLIED: dict[tuple[str, str], tuple] = {}
+
+
 def change(family: str, engine_id: str, path: str | None) -> dict:
     """Serialize mutation with engine leases; busy never persists or unloads.
 
@@ -349,10 +385,17 @@ def change(family: str, engine_id: str, path: str | None) -> dict:
     with tts._ENGINE_CACHE_LOCK:
         if tts._ENGINE_IN_USE.get(cls):
             raise EngineBusyError("This engine is busy; wait for generation to finish")
+        before = get(family, engine_id)
         if path is None:
             clear(family, engine_id)
         else:
             set_path(family, engine_id, path)
+        after = _weights_fingerprint(get(family, engine_id))
+        if (before is None and after[0] is None) or _APPLIED.get((family, engine_id)) == after:
+            # The effective checkpoint did not change (clearing an unset path, or
+            # the same folder re-saved with the same files): the loaded weights
+            # are still correct.
+            return state(family, engine_id)
         # Only evict this engine, never an unrelated active engine.
         inst = tts._ENGINE_INSTANCES.pop(cls, None)
         active = tts._active_instance if tts._active_instance_id == engine_id else None
@@ -363,4 +406,6 @@ def change(family: str, engine_id: str, path: str | None) -> dict:
         if engine_id == "omnivoice":
             from services import model_manager
             model_manager.unload_shared_model()
+        # Recorded only once the old weights are gone, so a failed eviction retries.
+        _APPLIED[(family, engine_id)] = after
     return state(family, engine_id)

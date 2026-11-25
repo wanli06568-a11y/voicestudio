@@ -120,12 +120,12 @@ Semua yang di atas gratis, berjalan di perangkat keras Anda sendiri, dan tidak m
       <a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section"><img src="../assets/voicestudio-pro.svg" alt="" width="56" height="56" align="middle" /></a>&nbsp;&nbsp;<strong><a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section">VoiceStudio Pro</a></strong><br /><br />
       Untuk pekerjaan klien berbayar di lebih dari satu mesin.
       <ul>
-        <li>Lisensi Komersial untuk pekerjaan klien Anda, dikirim lewat email</li>
+        <li>Lisensi Komersial untuk kode VoiceStudio dalam pekerjaan klien Anda, dikirim lewat email</li>
         <li>Satu pengguna di hingga 3 perangkat sekaligus</li>
         <li>Kirim pekerjaan ke GPU Anda yang lain sementara proyek tetap lokal</li>
         <li>Fitur dan perbaikan baru lebih dulu</li>
       </ul>
-      <sub>Build sumber tertutup, wajib akun, pengembalian dana penuh 7 hari. Aplikasi AGPL-3.0 tetap gratis, termasuk untuk penggunaan komersial sesuai ketentuannya.</sub><br /><br />
+      <sub>Build sumber tertutup, wajib akun, pengembalian dana penuh 7 hari. Aplikasi AGPL-3.0 tetap gratis, termasuk untuk penggunaan komersial sesuai ketentuannya. Kedua lisensi tidak mencakup bobot model: bobot OmniVoice bawaan bersifat nonkomersial (CC-BY-NC), jadi periksa lisensi setiap model di Model Manager sebelum mengerjakan proyek klien.</sub><br /><br />
       <strong><a href="https://voicestudio.sh/pro?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=project&amp;utm_content=readme-section">Lihat paket Pro →</a></strong>
     </td>
     <td width="50%" valign="top">
@@ -206,6 +206,8 @@ UI aplikasi berjalan pada Intel; sambungkan ke backend VoiceStudio di komputer l
 
 <details>
 <summary><img src="../../docs/assets/platforms/windows.svg" alt="" width="20" height="20" /> <strong>Windows</strong> · PowerShell · EXE</summary>
+
+[Penyiapan Windows ROCm](../../docs/install/windows-rocm.md) eksperimental mendukung GPU RDNA 2 RX 6000 tertentu dengan target `gfx1030`, `gfx1031`, atau `gfx1032`; RX 6500 XT (`gfx1034`) tidak termasuk. Build CTranslate2 yang versinya dikunci secara terpisah menyertakan kernel asli `gfx1031` untuk transkripsi RX 6700 XT; penyiapan memeriksa eksekusi kernel GPU yang sebenarnya. Pengujian RX 6700 XT juga mencakup pembuatan suara Torch asli dan PyTorch Whisper. Pada ROCm 10, faster-whisper memakai proses inferensi terpisah agar pemilihan CPU dan peralihan ke CPU tetap aman. Kartu dan beban kerja lain tetap mengikuti batas validasi dalam panduan. Preset performa memvalidasi perubahan pilihan mesin dalam proses anak offline sebelum menyimpannya, dengan mempertahankan pilihan cadangan jika runtime yang terpasang gagal.
 
 <blockquote>
 
@@ -499,9 +501,9 @@ Mengupgrade dari 0.5.3 atau lebih lama (aplikasi Tauri)? [Instal aplikasi baru s
 | Bantuan pengaturan | [Pemecahan Masalah](../../docs/install/troubleshooting.md) · [Unduhan model](../../docs/downloading-models.md) |
 | Panduan | [Sulih suara multi-pembicara](../../docs/dubbing/multi-speaker-guide.md) · [Ucapan ekspresif](../../docs/expressive-speech.md) · [Mengekspor sulih suara](../../docs/dubbing/export.md) |
 | Model & kualitas | [Panduan mesin](../../docs/engines/README.md) · [whisper.cpp ASR](../../docs/engines/whisper-cpp.md) · [Tolok ukur](../../docs/benchmarks.md) |
-| Integrasi | [API Lokal](../../docs/speech-platform.md) · [MCP](../../docs/mcp.md) · [Contoh](../../examples/README.md) |
+| Integrasi | [CLI](../../docs/install/script.md#terminal-command) · [API Lokal](../../docs/speech-platform.md) · [MCP](../../docs/mcp.md) · [Contoh](../../examples/README.md) |
 | Aplikasi telepon | [iOS dan Android](../../docs/mobile.md) |
-| Perkembangan | [Berkontribusi](../../.github/CONTRIBUTING.md) ([menandatangani CLA](../../.github/CONTRIBUTING.md#contribution-licensing) sebelum PR pertama Anda) · [Changelog](../../CHANGELOG.md) |
+| Perkembangan | [Berkontribusi](../../.github/CONTRIBUTING.md) ([menandatangani CLA](../../.github/CONTRIBUTING.md#contribution-licensing) sebelum PR pertama Anda) · [Changelog](../../CHANGELOG.md) · [Kebijakan penandatanganan kode](../code-signing-policy.md) |
 
 Skill agen: `npx skills add debpalash/VoiceStudio` (**voicestudio** untuk pekerjaan audio, **voicestudio-maintainer** untuk repositori).
 

@@ -35,6 +35,8 @@ const runtime = {
   stage: 'preparing',
   modelStage: null as string | null,
   modelProgress: null as number | null,
+  queue: [] as Array<{ id: string; label: string; voice: string | null; status: string }>,
+  queuedCount: 0,
 };
 
 const settings = {
@@ -52,6 +54,8 @@ const settings = {
   denoise: false,
   postprocess: true,
   duration: '',
+  paragraphGapMs: 0,
+  trimEngineSilence: false,
   showOverrides: true,
   selectedProfileId: null,
   autoPlay: true,
@@ -77,12 +81,16 @@ vi.mock('@/lib/audio/playback', () => ({
 }));
 
 vi.mock('@/hooks/use-generate', () => ({
+  useGenerationElapsed: () => runtime.elapsedSeconds,
   useGenerateClone: () => ({
     generate,
     cancel,
     error: failure.error,
     errorTopic: failure.topic,
     cloneBlocker: readiness.blocker,
+    removeQueued: vi.fn(),
+    clearFinished: vi.fn(),
+    cancelAll: vi.fn(),
     ...runtime,
   }),
 }));
@@ -97,6 +105,8 @@ describe('ActionBar', () => {
   beforeEach(() => {
     Object.assign(runtime, {
       isGenerating: false,
+      queue: [],
+      queuedCount: 0,
       elapsedSeconds: 0,
       progress: null,
       stage: 'preparing',
@@ -161,6 +171,14 @@ describe('ActionBar', () => {
     expect(resetVoiceControls).toHaveBeenCalled();
   });
 
+  it('offers the paragraph pause with engine-silence trimming', () => {
+    render(<ProductionSettings />);
+    expect(screen.getByText('Silence between paragraphs')).toBeVisible();
+    expect(screen.getByText(/Adds silence at blank lines/)).toBeVisible();
+    fireEvent.click(screen.getByRole('switch', { name: 'Remove engine edge silence' }));
+    expect(setCloneSetting).toHaveBeenCalledWith('trimEngineSilence', true);
+  });
+
   it('offers an icon-only reset in the Voice controls header', () => {
     render(<VoiceControls />);
     fireEvent.click(screen.getByRole('button', { name: 'Voice controls' }));
@@ -199,6 +217,34 @@ describe('ActionBar', () => {
     expect(screen.getByRole('button', { name: 'Optimizing model…' })).toHaveClass('w-60');
     expect(screen.getByText('62% · 3.4s')).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '62');
+  });
+
+  it('queues another take while one is rendering instead of blocking', () => {
+    Object.assign(runtime, {
+      isGenerating: true,
+      stage: 'generating',
+      queuedCount: 1,
+      queue: [
+        { id: 'a', label: 'First line', voice: 'Narrator', status: 'running' },
+        { id: 'b', label: 'Second line', voice: 'Narrator', status: 'queued' },
+      ],
+    });
+    render(<ActionBar />);
+
+    const add = screen.getByRole('button', { name: /Add to queue/ });
+    expect(add).toBeEnabled();
+    expect(add).toHaveTextContent('1');
+    fireEvent.click(add);
+    expect(generate).toHaveBeenCalledTimes(1);
+    const queue = screen.getByRole('region', { name: 'Generation queue' });
+    expect(queue).toHaveTextContent('Second line');
+    expect(queue).toHaveTextContent('#1 in line');
+  });
+
+  it('shows no queue controls while idle', () => {
+    render(<ActionBar />);
+    expect(screen.queryByRole('button', { name: /Add to queue/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Generation queue' })).not.toBeInTheDocument();
   });
 });
 

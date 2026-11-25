@@ -391,9 +391,28 @@ def _set_cache(key: str, value: object) -> None:
     _cache[key] = (time.monotonic(), value)
 
 
+#: Callbacks for modules that mirror catalogue state this cache owns. They
+#: register themselves, so this module never imports the services layer, which
+#: would close an ``api -> services -> api`` import cycle.
+_invalidation_hooks: list = []
+
+
+def register_invalidation_hook(hook) -> None:
+    """Register a callback run whenever the catalogue cache is busted."""
+    if hook not in _invalidation_hooks:
+        _invalidation_hooks.append(hook)
+
+
 def invalidate_cache() -> None:
     """Called after install/delete to bust the models cache."""
     _cache.clear()
+    # Derived state (the ASR installed memo) has to go with it: a positive-only
+    # memo would otherwise keep reporting a deleted checkpoint as installed.
+    for hook in list(_invalidation_hooks):
+        try:
+            hook()
+        except Exception:  # noqa: BLE001 - a cache bust must not fail the request
+            logger.warning("model cache invalidation hook failed", exc_info=True)
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────
@@ -575,6 +594,10 @@ def list_models():
     out = []
     host_tags = set(platform_tags)
     for m in KNOWN_MODELS:
+        # Sound effects (#3577) are not speech: they install only from Tools >
+        # Sound effects, never from this library (whose families are speech).
+        if str(m.get("role", "")).upper() == "SFX":
+            continue
         cached = cached_by_repo.get(m["repo_id"])
         if cached is not None and shares_repo(m):
             # The repository also holds other entries' packages: only this

@@ -8,11 +8,17 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { packageNativeHelper } from './native-helper-build.mjs';
+import { packageCli } from './cli-bundle.mjs';
+import { debMaintainerScripts } from './packaging/deb-scripts.mjs';
+import { assertBundleSymlinks } from './packaging/bundle-symlinks.mjs';
 import { finalizeOmnivoiceTts, omnivoiceTtsResources, signMac } from './omnivoice-tts-bundle.mjs';
 import { repairSnapArtifacts } from './snap-template-payload.mjs';
 import { signMasRuntime } from './mas-runtime-bundle.mjs';
 import { APP_ID, PRODUCT_NAME } from '../config/app-config.mjs';
 import { DISTRIBUTION_PROFILE, DISTRIBUTION_TARGET } from '../config/distributions.mjs';
+import { writeSupermetryConfig } from '../config/supermetry-app.mjs';
+
+writeSupermetryConfig();
 
 const here = dirname(fileURLToPath(import.meta.url));
 const { version } = JSON.parse(readFileSync(resolve(here, '../package.json'), 'utf-8'));
@@ -90,6 +96,7 @@ export function distributionPackaging(target = DISTRIBUTION_TARGET) {
   }
   return {
     linuxTargets: ['AppImage', 'deb'],
+    linuxExecutableName: 'voicestudio',
     publish: {
       provider: 'generic',
       url: updateUrl,
@@ -196,12 +203,17 @@ export default {
     },
     { from: '../pyproject.toml', to: 'pyproject.toml' },
     { from: '../uv.lock', to: 'uv.lock' },
+    // Wheels for packages PyPI ships only as source; uv.lock points at them (#4253).
+    { from: '../vendor/wheels', to: 'vendor/wheels', filter: ['*.whl', 'LICENSE-*.txt'] },
     { from: '../scripts/windows-rocm-recipe.json', to: 'scripts/windows-rocm-recipe.json' },
     { from: '../scripts/smoke_windows_rocm.py', to: 'scripts/smoke_windows_rocm.py' },
     { from: '../README.md', to: 'README.md' },
     { from: '../LICENSE', to: 'LICENSE' },
     { from: '../LICENSE-NOTICE.md', to: 'LICENSE-NOTICE.md' },
     { from: '../config/app.json', to: 'config/app.json' },
+    { from: '../config/analytics.json', to: 'config/analytics.json' },
+    { from: '../config/diagnostics.json', to: 'config/diagnostics.json' },
+    { from: '../config/supermetry-app.generated.json', to: 'config/supermetry-app.generated.json' },
     { from: 'T3CODE-LICENSE.txt', to: 'electron/T3CODE-LICENSE.txt' },
     ...(!isMacAppStore ? bundledUvResources : []),
     ...bundledOmnivoiceTtsResources,
@@ -214,8 +226,11 @@ export default {
   ],
   asar: true,
   afterPack: async (context) => {
+    await packageCli(context);
     await packageNativeHelper(context);
     finalizeOmnivoiceTts(context);
+    // Before signing: a broken or escaping link fails here with its name.
+    assertBundleSymlinks(context.appOutDir);
   },
   ...(DISTRIBUTION_TARGET === 'snap-store'
     ? { afterAllArtifactBuild: ({ artifactPaths }) => repairSnapArtifacts(artifactPaths) }
@@ -229,6 +244,7 @@ export default {
     target: ['nsis'],
   },
   nsis: {
+    include: 'packaging/cli-installer.nsh',
     oneClick: false,
     allowToChangeInstallationDirectory: true,
     perMachine: false,
@@ -243,11 +259,7 @@ export default {
     ...(adhocSignMac ? { identity: '-' } : {}),
     // Signs the bundled GGUF runtime and refreshes its checksum manifest
     // before the bundle seal (electron/omnivoice-tts-bundle.mjs).
-    ...(isMacAppStore
-      ? { sign: signMasRuntime }
-      : bundledOmnivoiceTtsResources.length
-        ? { sign: signMac }
-        : {}),
+    ...(isMacAppStore ? { sign: signMasRuntime } : { sign: signMac }),
     notarize: notarizeMac,
     extendInfo: {
       NSMicrophoneUsageDescription: readFileSync(resolve(here, 'build/Info.plist'), 'utf8')
@@ -257,6 +269,24 @@ export default {
     // The CLI matrix selects one architecture per runner and updater feed.
     target: isMacAppStore ? ['mas'] : ['dmg', 'zip'],
     category: 'public.app-category.productivity',
+  },
+  // The DMG install window (both architectures; the MAS target has no DMG).
+  // The background is build/dmg/background.svg rendered by
+  // `bun run dmg:background`. electron-builder sizes the window from the 1x
+  // image (a background makes it ignore dmg.window); `window` repeats that
+  // size and the icons sit on the drawn slots (tests/dmg-window.test.mjs).
+  // The title drops the arch suffix electron-builder adds by default; the
+  // file name still comes from artifactName.
+  dmg: {
+    title: '${productName} ${version}',
+    background: 'build/dmg-background.png',
+    window: { width: 660, height: 440 },
+    iconSize: 112,
+    iconTextSize: 12,
+    contents: [
+      { x: 170, y: 160, type: 'file' },
+      { x: 490, y: 160, type: 'link', path: '/Applications' },
+    ],
   },
   mas: {
     entitlements: 'build/entitlements.mas.plist',
@@ -273,6 +303,16 @@ export default {
     target: packaging.linuxTargets,
     ...(packaging.linuxExecutableName ? { executableName: packaging.linuxExecutableName } : {}),
     category: 'Audio',
+  },
+  deb: {
+    appArmorProfile: 'packaging/cli-apparmor-profile.tpl',
+    // Generated on first read, so importing this config stays side-effect free.
+    get afterInstall() {
+      return debMaintainerScripts().afterInstall;
+    },
+    get afterRemove() {
+      return debMaintainerScripts().afterRemove;
+    },
   },
   ...(packaging.snapcraft ? { snapcraft: packaging.snapcraft } : {}),
   publish: packaging.publish,
