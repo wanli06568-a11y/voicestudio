@@ -23,10 +23,12 @@ from core.config import PREVIEW_DIR
 from core.tasks import task_manager
 from core.logging_utils import log_safe
 from core.media_types import AUDIO_EXTS, MEDIA_EXTS, media_extension, media_upload_suffix, unsupported_media_detail
-from core.url_safety import UnsafeURLError, check_public_url, is_manifest_head, is_manifest_file
+from core.url_safety import UnsafeURLError, check_public_url, is_manifest_file, is_manifest_head
 from core.failure import InvalidMediaFileError
 from core import event_bus
-from schemas.requests import CleanupSegmentsRequest, DubIngestUrlRequest, ParseSubtitleTextRequest, TranscriptSyncRequest
+from schemas.requests import (
+    CleanupSegmentsRequest, DubAttachStemsRequest, DubIngestUrlRequest, ParseSubtitleTextRequest, TranscriptSyncRequest,
+)
 from services.srt_parser import CUE_SOURCE_FIELDS, CUE_SOURCE_ID, vouch_cue_source
 from services.dub_language import (
     DUB_SOURCE_LANG_CODES as _DUB_SOURCE_LANG_CODES,
@@ -66,6 +68,11 @@ router = APIRouter()
 logger = logging.getLogger("omnivoice.api")
 
 _MAX_COOKIE_EXPORT_BYTES = 1024 * 1024
+# Preview uploads are copied to disk in bounded chunks: the spooled upload file is
+# already on disk, so the only question is how much of it lands in RAM at once.
+_UPLOAD_COPY_CHUNK = 1024 * 1024
+# Enough to tell a playlist or concat manifest from real media (core/url_safety.py).
+_MANIFEST_HEAD_BYTES = 512
 
 
 def _cookie_transport_allowed(
@@ -809,14 +816,20 @@ async def preview_upload(video: UploadFile = File(...)):
     safe_name = f"{uuid.uuid4().hex[:12]}"
     vid_path = os.path.join(PREVIEW_DIR, f"{safe_name}{ext}")
     wav_path = os.path.join(PREVIEW_DIR, f"{safe_name}.wav")
-    payload = await video.read()
-    if is_manifest_head(payload[:512]):
-        # A playlist/manifest named like a video: ffmpeg would follow its URLs.
-        raise InvalidMediaFileError()
 
     def _write_and_extract() -> bool:
-        with open(vid_path, "wb") as f:
-            f.write(payload)
+        # Check the head before anything is written: a playlist named like a video
+        # must be refused without creating a destination file at all.
+        video.file.seek(0)
+        if is_manifest_head(video.file.read(_MANIFEST_HEAD_BYTES)):
+            # A playlist/manifest named like a video: ffmpeg would follow its URLs.
+            raise InvalidMediaFileError()
+        # Stream the spooled upload onto disk. `await video.read()` kept the whole
+        # body in RAM, so one long preview could get the backend OOM-killed; a
+        # size cap would break legitimate long videos, so copy in chunks instead.
+        video.file.seek(0)
+        with open(vid_path, "wb") as out:
+            shutil.copyfileobj(video.file, out, _UPLOAD_COPY_CHUNK)
         if ext in {".wav", ".mp3", ".m4a", ".aac"}:
             return False
         try:
@@ -931,8 +944,12 @@ async def dub_upload(
     input_type: str = Form("video"),
     source_lang: Optional[str] = Form(None),
     separate_background: bool = Form(True),
+    external_stems: bool = Form(False),
 ):
     """Accept a media upload, write to disk, queue background prep task.
+
+    ``external_stems`` keeps the full-quality audio extract for an external
+    separator and skips Demucs. Attach the result before transcribing.
 
     `input_type` is "video" (default) or "audio". Audio-only jobs (#119) skip
     scene detection, thumbnailing, and the final video mux — the transcribe →
@@ -1064,6 +1081,7 @@ async def dub_upload(
             "input_type": input_type,
             "source_lang": source_lang_override,
             "separate_background": separate_background,
+            "external_stems": external_stems,
         },
         filename,
     )
@@ -1071,6 +1089,18 @@ async def dub_upload(
         status_code=202,
         content={"job_id": job_id, "task_id": task_id, "filename": filename},
     )
+
+
+@router.post("/dub/stems/{job_id}", dependencies=[Depends(require_admin)])
+async def dub_attach_stems(job_id: str, req: DubAttachStemsRequest):
+    """Register externally separated WAVs with a prepared dubbing job."""
+    try:
+        has_bg = await asyncio.to_thread(dub_pipeline.attach_external_stems, job_id, req.vocals, req.no_vocals)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Dub job not found") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    return {"job_id": job_id, "has_bg": has_bg}
 
 
 @router.post("/dub/ingest-url")

@@ -584,6 +584,9 @@
     "body_required": true,
     "encoding": "application/json",
     "fields": [
+      "auto_fit_overflow",
+      "caption_segment_ids",
+      "caption_segments",
       "fit_options",
       "guidance_scale",
       "instruct",
@@ -764,6 +767,7 @@
     "body_required": true,
     "encoding": "multipart/form-data",
     "fields": [
+      "external_stems",
       "input_type",
       "job_id",
       "separate_background",
@@ -1024,7 +1028,9 @@
     "body_required": false,
     "encoding": "",
     "fields": [],
-    "query": [],
+    "query": [
+      "text_limit"
+    ],
     "required": [],
     "required_query": []
   },

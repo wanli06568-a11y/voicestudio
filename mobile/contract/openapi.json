@@ -691,6 +691,59 @@
     "title": "AutoExtractRequest",
     "type": "object"
    },
+   "Body_add_voice_elevenlabs_v1_voices_add_post": {
+    "properties": {
+     "description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Accepted without effect.",
+      "title": "Description"
+     },
+     "files": {
+      "description": "Recordings of the voice; the first is its reference.",
+      "items": {
+       "contentMediaType": "application/octet-stream",
+       "type": "string"
+      },
+      "title": "Files",
+      "type": "array"
+     },
+     "labels": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "JSON object; its 'language' sets the voice's language.",
+      "title": "Labels"
+     },
+     "name": {
+      "title": "Name",
+      "type": "string"
+     },
+     "remove_background_noise": {
+      "default": false,
+      "description": "Accepted without effect.",
+      "title": "Remove Background Noise",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "name",
+     "files"
+    ],
+    "title": "Body_add_voice_elevenlabs_v1_voices_add_post",
+    "type": "object"
+   },
    "Body_audio_isolation_elevenlabs_v1_audio_isolation_post": {
     "properties": {
      "audio": {
@@ -791,6 +844,77 @@
      "profile_id"
     ],
     "title": "Body_convert_speech_convert_post",
+    "type": "object"
+   },
+   "Body_create_dubbing_elevenlabs_v1_dubbing_post": {
+    "properties": {
+     "drop_background_audio": {
+      "default": false,
+      "title": "Drop Background Audio",
+      "type": "boolean"
+     },
+     "file": {
+      "anyOf": [
+       {
+        "contentMediaType": "application/octet-stream",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "File"
+     },
+     "name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Accepted; the file name is used.",
+      "title": "Name"
+     },
+     "num_speakers": {
+      "default": 0,
+      "description": "Accepted without effect.",
+      "title": "Num Speakers",
+      "type": "integer"
+     },
+     "source_lang": {
+      "default": "auto",
+      "description": "Accepted; the source language is detected.",
+      "title": "Source Lang",
+      "type": "string"
+     },
+     "source_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Source Url"
+     },
+     "target_lang": {
+      "title": "Target Lang",
+      "type": "string"
+     },
+     "watermark": {
+      "default": false,
+      "description": "Accepted; VoiceStudio always adds its AI watermark.",
+      "title": "Watermark",
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "target_lang"
+    ],
+    "title": "Body_create_dubbing_elevenlabs_v1_dubbing_post",
     "type": "object"
    },
    "Body_create_profile_profiles_post": {
@@ -1109,6 +1233,11 @@
    },
    "Body_dub_upload_dub_upload_post": {
     "properties": {
+     "external_stems": {
+      "default": false,
+      "title": "External Stems",
+      "type": "boolean"
+     },
      "input_type": {
       "default": "video",
       "title": "Input Type",
@@ -2433,6 +2562,26 @@
     "title": "DeviceInfo",
     "type": "object"
    },
+   "DialogueInput": {
+    "properties": {
+     "text": {
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+     },
+     "voice_id": {
+      "minLength": 1,
+      "title": "Voice Id",
+      "type": "string"
+     }
+    },
+    "required": [
+     "text",
+     "voice_id"
+    ],
+    "title": "DialogueInput",
+    "type": "object"
+   },
    "DiarisationSelection": {
     "properties": {
      "engine_id": {
@@ -2508,6 +2657,35 @@
      "text"
     ],
     "title": "DirectionReq",
+    "type": "object"
+   },
+   "DubAttachStemsRequest": {
+    "description": "WAV filenames in a prepared job's directory.",
+    "properties": {
+     "no_vocals": {
+      "anyOf": [
+       {
+        "maxLength": 240,
+        "minLength": 1,
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "No Vocals"
+     },
+     "vocals": {
+      "maxLength": 240,
+      "minLength": 1,
+      "title": "Vocals",
+      "type": "string"
+     }
+    },
+    "required": [
+     "vocals"
+    ],
+    "title": "DubAttachStemsRequest",
     "type": "object"
    },
    "DubIngestUrlRequest": {
@@ -2635,6 +2813,20 @@
       "default": "",
       "title": "Profile Id",
       "type": "string"
+     },
+     "source_ids": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Source Ids"
      },
      "speed": {
       "anyOf": [
@@ -5369,6 +5561,61 @@
     "title": "SystemInfoResponse",
     "type": "object"
    },
+   "TextToDialogueRequest": {
+    "additionalProperties": true,
+    "description": "ElevenLabs' text-to-dialogue body. ``settings`` and\n``pronunciation_dictionary_locators`` are accepted without effect.",
+    "properties": {
+     "inputs": {
+      "items": {
+       "$ref": "#/components/schemas/DialogueInput"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "title": "Inputs",
+      "type": "array"
+     },
+     "language_code": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Language Code"
+     },
+     "model_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Model Id"
+     },
+     "seed": {
+      "anyOf": [
+       {
+        "maximum": 4294967295.0,
+        "minimum": 0.0,
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Seed"
+     }
+    },
+    "required": [
+     "inputs"
+    ],
+    "title": "TextToDialogueRequest",
+    "type": "object"
+   },
    "TextToSpeechRequest": {
     "additionalProperties": true,
     "description": "ElevenLabs' text-to-speech body. ``stability``, ``similarity_boost``,\n``style``, ``use_speaker_boost``, ``previous_text``/``next_text`` and\npronunciation-dictionary locators have no VoiceStudio equivalent and are\naccepted without effect; VoiceStudio's own pronunciation dictionary still\napplies.",
@@ -6976,6 +7223,39 @@
    },
    "schemas__requests__DubRequest": {
     "properties": {
+     "auto_fit_overflow": {
+      "default": false,
+      "title": "Auto Fit Overflow",
+      "type": "boolean"
+     },
+     "caption_segment_ids": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Caption Segment Ids"
+     },
+     "caption_segments": {
+      "anyOf": [
+       {
+        "items": {
+         "$ref": "#/components/schemas/DubSegment"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Caption Segments"
+     },
      "fit_options": {
       "anyOf": [
        {
@@ -7101,7 +7381,8 @@
          "concise",
          "stretch_video",
          "strict_slot",
-         "smart_fit"
+         "smart_fit",
+         "narration"
         ],
         "type": "string"
        },
@@ -13559,6 +13840,54 @@
     "summary": "Dub Parse Subtitle Text"
    }
   },
+  "/dub/plan/{job_id}": {
+   "post": {
+    "description": "Inspect the exact render inputs and saved speech without running TTS.",
+    "operationId": "dub_generation_plan_dub_plan__job_id__post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "job_id",
+      "required": true,
+      "schema": {
+       "title": "Job Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/schemas__requests__DubRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Dub Generation Plan"
+   }
+  },
   "/dub/preview-segment/{job_id}": {
    "post": {
     "description": "Generate TTS for a single segment and return WAV bytes.\n\nThis is the fast path for interactive editing \u2014 8 diffusion steps,\nno disk write, no mix. The preview IS synthetic audio leaving the app,\nso it carries the same invisible provenance mark as every other\nproducer (#1169 \u2014 \"no watermark\" here used to be an exemption).",
@@ -13958,6 +14287,64 @@
     "summary": "Dub Segments Text"
    }
   },
+  "/dub/speech-preview/{job_id}/{render_id}/{token}": {
+   "get": {
+    "operationId": "dub_speech_preview_dub_speech_preview__job_id___render_id___token__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "job_id",
+      "required": true,
+      "schema": {
+       "title": "Job Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "render_id",
+      "required": true,
+      "schema": {
+       "title": "Render Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "token",
+      "required": true,
+      "schema": {
+       "title": "Token",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "audio/wav": {
+        "schema": {
+         "format": "binary",
+         "type": "string"
+        }
+       }
+      },
+      "description": "The completed take as WAV audio."
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Dub Speech Preview"
+   }
+  },
   "/dub/srt/{job_id}": {
    "get": {
     "operationId": "dub_export_srt_dub_srt__job_id__get",
@@ -14072,6 +14459,54 @@
      }
     },
     "summary": "Dub Export Srt"
+   }
+  },
+  "/dub/stems/{job_id}": {
+   "post": {
+    "description": "Register externally separated WAVs with a prepared dubbing job.",
+    "operationId": "dub_attach_stems_dub_stems__job_id__post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "job_id",
+      "required": true,
+      "schema": {
+       "title": "Job Id",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DubAttachStemsRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Dub Attach Stems"
    }
   },
   "/dub/sync-transcript/{job_id}": {
@@ -14413,7 +14848,7 @@
   },
   "/dub/upload": {
    "post": {
-    "description": "Accept a media upload, write to disk, queue background prep task.\n\n`input_type` is \"video\" (default) or \"audio\". Audio-only jobs (#119) skip\nscene detection, thumbnailing, and the final video mux \u2014 the transcribe \u2192\ntranslate \u2192 TTS core is identical.\n\nReturns 202 with {job_id, task_id, filename}. Client should open SSE on\n/tasks/stream/{task_id} to monitor extract/demucs stages and wait for the\n'ready' event before starting transcription.",
+    "description": "Accept a media upload, write to disk, queue background prep task.\n\n``external_stems`` keeps the full-quality audio extract for an external\nseparator and skips Demucs. Attach the result before transcribing.\n\n`input_type` is \"video\" (default) or \"audio\". Audio-only jobs (#119) skip\nscene detection, thumbnailing, and the final video mux \u2014 the transcribe \u2192\ntranslate \u2192 TTS core is identical.\n\nReturns 202 with {job_id, task_id, filename}. Client should open SSE on\n/tasks/stream/{task_id} to monitor extract/demucs stages and wait for the\n'ready' event before starting transcription.",
     "operationId": "dub_upload_dub_upload_post",
     "requestBody": {
      "content": {
@@ -14720,6 +15155,409 @@
     },
     "summary": "Audio Isolation",
     "tags": [
+     "ElevenLabs-Compatible API",
+     "ElevenLabs-Compatible API"
+    ]
+   }
+  },
+  "/elevenlabs/v1/dubbing": {
+   "post": {
+    "description": "Dub a video into ``target_lang`` on the app's batch queue (Batch page).\nPoll ``GET /v1/dubbing/{dubbing_id}`` until ``status`` is ``dubbed``, then\ndownload it from ``/v1/dubbing/{dubbing_id}/audio/{target_lang}``.",
+    "operationId": "create_dubbing_elevenlabs_v1_dubbing_post",
+    "requestBody": {
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/Body_create_dubbing_elevenlabs_v1_dubbing_post"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Create Dubbing Elevenlabs V1 Dubbing Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Create Dubbing",
+    "tags": [
+     "ElevenLabs-Compatible API",
+     "ElevenLabs-Compatible API"
+    ]
+   }
+  },
+  "/elevenlabs/v1/dubbing/{dubbing_id}": {
+   "delete": {
+    "description": "Delete a finished dubbing and its files (administrator access, as on\nthe Batch page). Cancel an active one in the app first.",
+    "operationId": "delete_dubbing_elevenlabs_v1_dubbing__dubbing_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dubbing_id",
+      "required": true,
+      "schema": {
+       "title": "Dubbing Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Delete Dubbing Elevenlabs V1 Dubbing  Dubbing Id  Delete",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Dubbing",
+    "tags": [
+     "ElevenLabs-Compatible API",
+     "ElevenLabs-Compatible API"
+    ]
+   },
+   "get": {
+    "operationId": "get_dubbing_elevenlabs_v1_dubbing__dubbing_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dubbing_id",
+      "required": true,
+      "schema": {
+       "title": "Dubbing Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get Dubbing Elevenlabs V1 Dubbing  Dubbing Id  Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Dubbing",
+    "tags": [
+     "ElevenLabs-Compatible API",
+     "ElevenLabs-Compatible API"
+    ]
+   }
+  },
+  "/elevenlabs/v1/dubbing/{dubbing_id}/audio/{language_code}": {
+   "get": {
+    "description": "The dubbed video for ``language_code`` once ``status`` is ``dubbed``.",
+    "operationId": "get_dubbed_file_elevenlabs_v1_dubbing__dubbing_id__audio__language_code__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "dubbing_id",
+      "required": true,
+      "schema": {
+       "title": "Dubbing Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "path",
+      "name": "language_code",
+      "required": true,
+      "schema": {
+       "title": "Language Code",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "video/mp4": {
+        "schema": {
+         "format": "binary",
+         "type": "string"
+        }
+       }
+      },
+      "description": "The dubbed video."
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get Dubbed File",
+    "tags": [
+     "ElevenLabs-Compatible API",
+     "ElevenLabs-Compatible API"
+    ]
+   }
+  },
+  "/elevenlabs/v1/history": {
+   "get": {
+    "description": "Takes generated in the app (Generate, Stories and the other pages that\nsave to history), newest first.",
+    "operationId": "list_history_elevenlabs_v1_history_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "page_size",
+      "required": false,
+      "schema": {
+       "default": 100,
+       "maximum": 1000,
+       "minimum": 1,
+       "title": "Page Size",
+       "type": "integer"
+      }
+     },
+     {
+      "in": "query",
+      "name": "start_after_history_item_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Start After History Item Id"
+      }
+     },
+     {
+      "in": "query",
+      "name": "voice_id",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Voice Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response List History Elevenlabs V1 History Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "List History",
+    "tags": [
+     "ElevenLabs-Compatible API",
+     "ElevenLabs-Compatible API"
+    ]
+   }
+  },
+  "/elevenlabs/v1/history/{history_item_id}": {
+   "delete": {
+    "description": "Delete a take (administrator access, as in the app).",
+    "operationId": "delete_history_item_elevenlabs_v1_history__history_item_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "history_item_id",
+      "required": true,
+      "schema": {
+       "title": "History Item Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Delete History Item Elevenlabs V1 History  History Item Id  Delete",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete History Item",
+    "tags": [
+     "ElevenLabs-Compatible API",
+     "ElevenLabs-Compatible API"
+    ]
+   },
+   "get": {
+    "operationId": "get_history_item_elevenlabs_v1_history__history_item_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "history_item_id",
+      "required": true,
+      "schema": {
+       "title": "History Item Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Get History Item Elevenlabs V1 History  History Item Id  Get",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get History Item",
+    "tags": [
+     "ElevenLabs-Compatible API",
+     "ElevenLabs-Compatible API"
+    ]
+   }
+  },
+  "/elevenlabs/v1/history/{history_item_id}/audio": {
+   "get": {
+    "operationId": "get_history_audio_elevenlabs_v1_history__history_item_id__audio_get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "history_item_id",
+      "required": true,
+      "schema": {
+       "title": "History Item Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "audio/wav": {
+        "schema": {
+         "format": "binary",
+         "type": "string"
+        }
+       }
+      },
+      "description": "The take as WAV."
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get History Audio",
+    "tags": [
+     "ElevenLabs-Compatible API",
      "ElevenLabs-Compatible API"
     ]
    }
@@ -14740,6 +15578,7 @@
     },
     "summary": "List Models",
     "tags": [
+     "ElevenLabs-Compatible API",
      "ElevenLabs-Compatible API"
     ]
    }
@@ -14825,6 +15664,7 @@
     },
     "summary": "Sound Generation",
     "tags": [
+     "ElevenLabs-Compatible API",
      "ElevenLabs-Compatible API"
     ]
    }
@@ -14919,6 +15759,7 @@
     },
     "summary": "Speech To Speech",
     "tags": [
+     "ElevenLabs-Compatible API",
      "ElevenLabs-Compatible API"
     ]
    }
@@ -15013,6 +15854,7 @@
     },
     "summary": "Speech To Speech",
     "tags": [
+     "ElevenLabs-Compatible API",
      "ElevenLabs-Compatible API"
     ]
    }
@@ -15053,6 +15895,179 @@
     },
     "summary": "Speech To Text",
     "tags": [
+     "ElevenLabs-Compatible API",
+     "ElevenLabs-Compatible API"
+    ]
+   }
+  },
+  "/elevenlabs/v1/text-to-dialogue": {
+   "post": {
+    "description": "One recording of several voices taking turns, each line in its own\nvoice profile (or ``default`` / an engine preset).",
+    "operationId": "text_to_dialogue_elevenlabs_v1_text_to_dialogue_post",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "output_format",
+      "required": false,
+      "schema": {
+       "default": "mp3_44100_128",
+       "title": "Output Format",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TextToDialogueRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "audio/basic": {
+        "schema": {
+         "format": "binary",
+         "type": "string"
+        }
+       },
+       "audio/mpeg": {
+        "schema": {
+         "format": "binary",
+         "type": "string"
+        }
+       },
+       "audio/ogg": {
+        "schema": {
+         "format": "binary",
+         "type": "string"
+        }
+       },
+       "audio/pcm": {
+        "schema": {
+         "format": "binary",
+         "type": "string"
+        }
+       },
+       "audio/wav": {
+        "schema": {
+         "format": "binary",
+         "type": "string"
+        }
+       },
+       "audio/x-alaw-basic": {
+        "schema": {
+         "format": "binary",
+         "type": "string"
+        }
+       }
+      },
+      "description": "Audio in the requested output_format."
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Text To Dialogue",
+    "tags": [
+     "ElevenLabs-Compatible API",
+     "ElevenLabs-Compatible API"
+    ]
+   }
+  },
+  "/elevenlabs/v1/text-to-dialogue/stream": {
+   "post": {
+    "description": "The same recording, sent as one chunked response once it is rendered.",
+    "operationId": "text_to_dialogue_stream_elevenlabs_v1_text_to_dialogue_stream_post",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "output_format",
+      "required": false,
+      "schema": {
+       "default": "mp3_44100_128",
+       "title": "Output Format",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TextToDialogueRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "audio/basic": {
+        "schema": {
+         "format": "binary",
+         "type": "string"
+        }
+       },
+       "audio/mpeg": {
+        "schema": {
+         "format": "binary",
+         "type": "string"
+        }
+       },
+       "audio/ogg": {
+        "schema": {
+         "format": "binary",
+         "type": "string"
+        }
+       },
+       "audio/pcm": {
+        "schema": {
+         "format": "binary",
+         "type": "string"
+        }
+       },
+       "audio/wav": {
+        "schema": {
+         "format": "binary",
+         "type": "string"
+        }
+       },
+       "audio/x-alaw-basic": {
+        "schema": {
+         "format": "binary",
+         "type": "string"
+        }
+       }
+      },
+      "description": "Audio in the requested output_format."
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Text To Dialogue Stream",
+    "tags": [
+     "ElevenLabs-Compatible API",
      "ElevenLabs-Compatible API"
     ]
    }
@@ -15183,6 +16198,7 @@
     },
     "summary": "Text To Speech",
     "tags": [
+     "ElevenLabs-Compatible API",
      "ElevenLabs-Compatible API"
     ]
    }
@@ -15309,6 +16325,131 @@
     },
     "summary": "Text To Speech Stream",
     "tags": [
+     "ElevenLabs-Compatible API",
+     "ElevenLabs-Compatible API"
+    ]
+   }
+  },
+  "/elevenlabs/v1/text-to-speech/{voice_id}/stream/with-timestamps": {
+   "post": {
+    "description": "The same result as one newline-delimited JSON chunk.",
+    "operationId": "text_to_speech_stream_with_timestamps_elevenlabs_v1_text_to_speech__voice_id__stream_with_timestamps_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "voice_id",
+      "required": true,
+      "schema": {
+       "title": "Voice Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "output_format",
+      "required": false,
+      "schema": {
+       "default": "mp3_44100_128",
+       "title": "Output Format",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TextToSpeechRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Text To Speech Stream With Timestamps",
+    "tags": [
+     "ElevenLabs-Compatible API",
+     "ElevenLabs-Compatible API"
+    ]
+   }
+  },
+  "/elevenlabs/v1/text-to-speech/{voice_id}/with-timestamps": {
+   "post": {
+    "description": "Speech plus the start and end time of every character of ``text``.\nTimings come from recognizing the take when a speech-recognition model is\ninstalled (``X-OmniVoice-Alignment: recognized``), else they are estimated\nfrom the speech span (``estimated``).",
+    "operationId": "text_to_speech_with_timestamps_elevenlabs_v1_text_to_speech__voice_id__with_timestamps_post",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "voice_id",
+      "required": true,
+      "schema": {
+       "title": "Voice Id",
+       "type": "string"
+      }
+     },
+     {
+      "in": "query",
+      "name": "output_format",
+      "required": false,
+      "schema": {
+       "default": "mp3_44100_128",
+       "title": "Output Format",
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TextToSpeechRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Text To Speech With Timestamps",
+    "tags": [
+     "ElevenLabs-Compatible API",
      "ElevenLabs-Compatible API"
     ]
    }
@@ -15403,6 +16544,7 @@
     },
     "summary": "Speech To Speech",
     "tags": [
+     "ElevenLabs-Compatible API",
      "ElevenLabs-Compatible API"
     ]
    }
@@ -15497,6 +16639,7 @@
     },
     "summary": "Speech To Speech",
     "tags": [
+     "ElevenLabs-Compatible API",
      "ElevenLabs-Compatible API"
     ]
    }
@@ -15517,6 +16660,52 @@
     },
     "summary": "List Voices",
     "tags": [
+     "ElevenLabs-Compatible API",
+     "ElevenLabs-Compatible API"
+    ]
+   }
+  },
+  "/elevenlabs/v1/voices/add": {
+   "post": {
+    "description": "Instant voice cloning: save a recording as a new voice profile, the\nsame as adding a cloned voice in the app. VoiceStudio clones from one\nreference recording, the first file sent.",
+    "operationId": "add_voice_elevenlabs_v1_voices_add_post",
+    "requestBody": {
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "$ref": "#/components/schemas/Body_add_voice_elevenlabs_v1_voices_add_post"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Add Voice Elevenlabs V1 Voices Add Post",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Add Voice",
+    "tags": [
+     "ElevenLabs-Compatible API",
      "ElevenLabs-Compatible API"
     ]
    }
@@ -15536,11 +16725,56 @@
     },
     "summary": "Default Voice Settings",
     "tags": [
+     "ElevenLabs-Compatible API",
      "ElevenLabs-Compatible API"
     ]
    }
   },
   "/elevenlabs/v1/voices/{voice_id}": {
+   "delete": {
+    "description": "Delete a voice profile (administrator access, as in the app).",
+    "operationId": "delete_voice_elevenlabs_v1_voices__voice_id__delete",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "voice_id",
+      "required": true,
+      "schema": {
+       "title": "Voice Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "additionalProperties": true,
+         "title": "Response Delete Voice Elevenlabs V1 Voices  Voice Id  Delete",
+         "type": "object"
+        }
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Delete Voice",
+    "tags": [
+     "ElevenLabs-Compatible API",
+     "ElevenLabs-Compatible API"
+    ]
+   },
    "get": {
     "operationId": "get_voice_elevenlabs_v1_voices__voice_id__get",
     "parameters": [
@@ -15576,6 +16810,7 @@
     },
     "summary": "Get Voice",
     "tags": [
+     "ElevenLabs-Compatible API",
      "ElevenLabs-Compatible API"
     ]
    }
@@ -15616,6 +16851,7 @@
     },
     "summary": "Voice Settings",
     "tags": [
+     "ElevenLabs-Compatible API",
      "ElevenLabs-Compatible API"
     ]
    }
@@ -15692,6 +16928,7 @@
     },
     "summary": "Search Voices",
     "tags": [
+     "ElevenLabs-Compatible API",
      "ElevenLabs-Compatible API"
     ]
    }
@@ -17729,6 +18966,26 @@
    "get": {
     "description": "The newest 50 generations plus every starred take, newest first, kept to\nrows whose audio still exists on disk.\n\nStarred takes ride along past the 50-row window so a keeper can never age\noff the rail. Rows whose WAV was deleted out-of-band (cleared outputs dir,\nmanual cleanup) used to come back anyway and render dead players that 404\non every fetch; prune them here so the UI never sees them again.",
     "operationId": "list_history_history_get",
+    "parameters": [
+     {
+      "in": "query",
+      "name": "text_limit",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "maximum": 100000,
+         "minimum": 1,
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Text Limit"
+      }
+     }
+    ],
     "responses": {
      "200": {
       "content": {
@@ -17737,6 +18994,16 @@
        }
       },
       "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
      }
     },
     "summary": "List History"
@@ -17777,6 +19044,42 @@
      }
     },
     "summary": "Delete Single History"
+   },
+   "get": {
+    "description": "One take with its full text (the list may clip it, see ``text_limit``).",
+    "operationId": "get_history_item_history__history_id__get",
+    "parameters": [
+     {
+      "in": "path",
+      "name": "history_id",
+      "required": true,
+      "schema": {
+       "title": "History Id",
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      },
+      "description": "Successful Response"
+     },
+     "422": {
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      },
+      "description": "Validation Error"
+     }
+    },
+    "summary": "Get History Item"
    }
   },
   "/history/{history_id}/starred": {
@@ -21685,7 +22988,7 @@
   },
   "/tasks/stream/{task_id}": {
    "get": {
-    "description": "Universal Server-Sent Event stream for background tasks.\n\n`?after_seq=N` enables resumption: on reconnect, the client replays\npersisted events with seq > N, then (if the job is still live) attaches\nto the in-memory listener for live updates. After a server restart the\nin-memory task is gone but the persisted tail + final `jobs.status` are\nstill readable, so a mid-stream reload still sees the final state.",
+    "description": "Universal Server-Sent Event stream for background tasks.\n\n`?after_seq=N` enables resumption: on reconnect, the client replays\npersisted events with seq > N, then (if the job is still live) attaches\nto the in-memory listener for live updates. After a server restart the\nin-memory task is gone but the persisted tail + final `jobs.status` are\nstill readable, so a mid-stream reload still sees the final state. A job\nwhose process died before it wrote a terminal event gets one built from\nthat status, so its stream ends with a terminal frame (#4463).",
     "operationId": "stream_task_tasks_stream__task_id__get",
     "parameters": [
      {

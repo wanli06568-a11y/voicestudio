@@ -81,7 +81,7 @@ The runtime folder is on a drive mounted with `noexec`. Choose a folder on anoth
 
 ### `RUNTIME_DOWNLOAD_STALLED`
 
-A runtime download received no data for a long time. Setup stops a download that gets no data for 2 minutes, and repeats the install up to twice by itself after a stall or a temporary server error (such as 504 Gateway Timeout) before it shows this. Retry keeps finished packages and resumes large multi-connection downloads, but other partial downloads start again. Try another network, turn off your VPN or choose another download region.
+A runtime download received no data for a long time. The multi-connection pre-download of large wheels gives up after 60 seconds without a byte and leaves the rest to uv, which then downloads them (and shows the stall below if it also gets no data). Setup stops a download that gets no data for 2 minutes, and repeats the install up to twice by itself after a stall or a temporary server error (such as 504 Gateway Timeout) before it shows this. Retry keeps finished packages and resumes large multi-connection downloads, but other partial downloads start again. Try another network, turn off your VPN or choose another download region.
 
 Cancel and Restart on CPU interrupt the automatic retry countdown immediately;
 finished downloads remain cached. Runtime probes also drain verbose diagnostic
@@ -138,6 +138,8 @@ The managed Python environment is damaged and automatic repair did not fix it. U
 The engine crashed below Python (`0xC0000005` or `SIGSEGV`). Update your GPU driver and try CPU mode. Send the in-app report if it persists. On Windows the report names the library that crashed (see [Native backend crashes in Electron](#native-backend-crashes-in-electron)); when it is the graphics driver, the screen says so.
 
 A crash inside the model weight loader (`transformers/core_model_loading.py` in the crashed thread, seen on some Windows machines) is avoided on Windows by default: the backend loads weights one at a time (`HF_DEACTIVATE_ASYNC_LOAD=1`), which only makes loading slower. Set `HF_DEACTIVATE_ASYNC_LOAD=0` to opt back in to threaded loading. On macOS and Linux the same setting is applied automatically, for later starts of the same version, after such a crash.
+
+On Windows the backend also reads model weights with ordinary file reads (safetensors' `pread`) instead of memory-mapping them, because the first read through the memory map can crash the same way (`torch/storage.py` in the crashed thread). It reads the same bytes. Set `OMNIVOICE_SAFETENSORS_PREAD=0` to go back to memory-mapped reads.
 
 ### `NATIVE_ILLEGAL_INSTRUCTION`
 
@@ -1830,6 +1832,10 @@ Accept it in the dialog that appears, or in **Model Manager → the model's
 Licence icon**. Nothing is re-downloaded. Headless and API users can accept with
 `POST /models/licenses/accept`; see
 [Licence acceptance before use](../licensing/model-review-workflow.md#licence-acceptance-before-use).
+
+OmniVoice checks whether the installed checkpoint contains its own audio
+tokenizer. A separate Higgs tokenizer acknowledgement is required when that
+checkpoint needs to load the fallback tokenizer.
 
 ### Setup stops at `VOICESTUDIO_CUDNN8_PROBE` on a CPU-only computer
 
