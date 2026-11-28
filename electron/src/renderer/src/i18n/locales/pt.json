@@ -2054,9 +2054,11 @@
   "privacy": {
     "translator_online": "O tradutor está online: {{provider}}",
     "analytics_title": "Ajude a melhorar o VoiceStudio",
+    "analytics_subtitle": "Desativado por padrão. Dados anônimos de mecanismo, idioma, duração, número de caracteres e tipos de erro. Nunca texto ou áudio.",
     "translator_offline": "Somente offline",
     "translator_unknown": "Desconhecido",
     "watermark_title": "Marca de água invisível",
+    "watermark_subtitle": "Ativada por predefinição. Marca o áudio gerado como criado por IA para poder ser identificado mais tarde. Afeta apenas o áudio gerado a partir de agora.",
     "change_translator": "Alterar tradutor"
   },
   "updates": {
@@ -2194,6 +2196,7 @@
     "cause_noexec": "A pasta do mecanismo não permite executar programas",
     "hint_noexec": "Esta unidade está montada com noexec. Escolha uma pasta em outra unidade ou remonte-a sem noexec e tente novamente.",
     "cause_download": "O download parou antes de a configuração terminar",
+    "download_failed_host": "Não foi possível baixar de {{host}}.",
     "hint_download": "Tente novamente para continuar. Se continuar parando, use outra rede, desative a VPN ou escolha outra região de download.",
     "cause_illegal_instruction": "O mecanismo parou em uma instrução que este computador não conseguiu executar",
     "hint_illegal_instruction": "Talvez falte ao processador um recurso exigido pelas bibliotecas do mecanismo. Copie o diagnóstico e inclua-o em um relatório com o modelo do processador.",

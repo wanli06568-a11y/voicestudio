@@ -1,6 +1,6 @@
 import { useCallback, useState, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { isCancelledError, queryOptions, useQuery, useQueryClient } from '@tanstack/react-query';
 import { LoaderCircleIcon, TriangleAlertIcon, WrenchIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -13,19 +13,50 @@ import { apiJson, describeError } from '@/lib/api/client';
 import { openRepairAgent } from '@/lib/repair-agent-events';
 import type { EnginesResponse } from '@/lib/api/types';
 import type { ModelCatalogueResponse } from '@/features/settings/model-catalogue-query';
+import { fmtGb } from '@shared/components/settings/models/format';
 
 interface RecommendedModel {
   repo_id: string;
   role: string;
   required: boolean;
   installed: boolean;
+  label?: string;
+  size_gb?: number;
 }
 
 interface ModelRecommendations {
   models: RecommendedModel[];
 }
 
-export type EngineSetup = ReturnType<typeof useEngineSetup>;
+export interface EngineSetup {
+  blocked: boolean;
+  busy: boolean;
+  download?: { repo_id: string; label?: string; size_gb?: number };
+  install: ReturnType<typeof useModelInstall> | null;
+  fix: () => Promise<void>;
+}
+
+async function loadTtsSetupPlan({ signal }: { signal: AbortSignal }) {
+  const engines = await apiJson<EnginesResponse>('/engines', { signal });
+  const active = engines.tts?.backends?.find((backend) => backend.id === engines.tts.active);
+  const selectedModel = active?.available ? engines.tts.active_model : null;
+  if (selectedModel) {
+    const catalogue = await apiJson<ModelCatalogueResponse>('/models', { signal });
+    const entry = catalogue.models?.find((model) => model.repo_id === selectedModel);
+    if (entry && (!entry.installed || entry.incomplete)) return { engines, model: entry };
+  }
+  const recommendations = await apiJson<ModelRecommendations>('/setup/recommendations', { signal });
+  const model = recommendations.models.find(
+    (item) => item.required && item.role.toLowerCase() === 'tts' && !item.installed,
+  );
+  return { engines, model };
+}
+
+const ttsSetupPlanQuery = queryOptions({
+  queryKey: ['tts-setup-plan'],
+  queryFn: loadTtsSetupPlan,
+  staleTime: 15_000,
+});
 
 /**
  * Readiness of text-to-speech for `operation` plus the one-click setup that
@@ -33,18 +64,26 @@ export type EngineSetup = ReturnType<typeof useEngineSetup>;
  * installed engine). Shared by the standalone notice and by composers, whose
  * primary action becomes this setup while TTS is not ready.
  */
-export function useEngineSetup(operation = 'tts') {
+export function useEngineSetup(operation = 'tts'): EngineSetup {
   const { t } = useTranslation();
   const client = useQueryClient();
   const [fixing, setFixing] = useState(false);
   const blocker = useTtsReadiness(operation);
+  const plan = useQuery({
+    ...ttsSetupPlanQuery,
+    enabled: operation === 'clone' && blocker === 'engine',
+  });
 
   const refreshReadiness = useCallback(
     () =>
       Promise.all(
-        ['model-install-jobs', 'model-catalogue', 'model-recommendations', 'engines'].map((key) =>
-          client.invalidateQueries({ queryKey: [key] }),
-        ),
+        [
+          'model-install-jobs',
+          'model-catalogue',
+          'model-recommendations',
+          'engines',
+          'tts-setup-plan',
+        ].map((key) => client.invalidateQueries({ queryKey: [key] })),
       ),
     [client],
   );
@@ -76,10 +115,11 @@ export function useEngineSetup(operation = 'tts') {
         method: 'POST',
         body: JSON.stringify({ family: 'tts', backend_id: candidate.id }),
       });
+      await client.cancelQueries({ queryKey: ttsSetupPlanQuery.queryKey });
       await refreshReadiness();
       return true;
     },
-    [refreshReadiness],
+    [client, refreshReadiness],
   );
 
   const install = useModelInstall(undefined, {
@@ -108,27 +148,12 @@ export function useEngineSetup(operation = 'tts') {
   const fix = async () => {
     setFixing(true);
     try {
-      // Readiness also blocks when the selected engine is available but the
-      // model chosen for it is not downloaded. Download that model first,
-      // keeping the user's engine choice; a recommended model alone would not
-      // unblock that engine.
-      const engines = await apiJson<EnginesResponse>('/engines');
-      const active = engines.tts?.backends?.find((backend) => backend.id === engines.tts.active);
-      const selectedModel = active?.available ? engines.tts.active_model : null;
-      if (selectedModel) {
-        const catalogue = await apiJson<ModelCatalogueResponse>('/models');
-        const entry = catalogue.models?.find((model) => model.repo_id === selectedModel);
-        if (entry && (!entry.installed || entry.incomplete)) {
-          await startInstall(selectedModel);
-          return;
-        }
-      }
-      const recommendation = await apiJson<ModelRecommendations>('/setup/recommendations');
-      const missing = recommendation.models.find(
-        (item) => item.required && item.role.toLowerCase() === 'tts' && !item.installed,
-      );
-      if (missing) {
-        await startInstall(missing.repo_id);
+      const { engines, model } = await client.fetchQuery({
+        ...ttsSetupPlanQuery,
+        staleTime: operation === 'clone' ? ttsSetupPlanQuery.staleTime : 0,
+      });
+      if (model) {
+        await startInstall(model.repo_id);
         return;
       }
       if (!(await activateAvailableEngine(engines))) {
@@ -137,7 +162,7 @@ export function useEngineSetup(operation = 'tts') {
         );
       }
     } catch (error) {
-      repair(`Automatic model setup failed: ${describeError(error)}`);
+      if (!isCancelledError(error)) repair(`Automatic model setup failed: ${describeError(error)}`);
     } finally {
       setFixing(false);
     }
@@ -145,7 +170,8 @@ export function useEngineSetup(operation = 'tts') {
   const view = install.view;
   return {
     blocked: blocker === 'engine',
-    busy: fixing || install.busy,
+    busy: fixing || install.busy || (operation === 'clone' && plan.isFetching),
+    download: operation === 'clone' ? plan.data?.model : undefined,
     /** A download this setup started or joined, until it ends or is dismissed. */
     install: view && view.stage !== 'ready' && view.stage !== 'cancelled' ? install : null,
     fix,
@@ -174,6 +200,16 @@ export function EngineSetupProgress({
   );
 }
 
+/**
+ * A model's name without the catalogue's parenthesised details
+ * ("VoiceStudio TTS (k2-fsa/OmniVoice, 600+ languages, …)" → "VoiceStudio TTS"),
+ * so a fixed-height button never has to wrap a description.
+ */
+export function shortModelName(model: { repo_id: string; label?: string }): string {
+  const name = model.label?.split(' (')[0].trim();
+  return name || model.repo_id.split('/').pop() || model.repo_id;
+}
+
 /** "Set up" in a notice, and the composer's primary action while TTS is not ready. */
 export function EngineSetupButton({
   setup,
@@ -186,6 +222,18 @@ export function EngineSetupButton({
 }) {
   const { t } = useTranslation();
   const working = setup.busy || Boolean(setup.install);
+  const download = setup.download;
+  const size = download?.size_gb ? fmtGb(download.size_gb) : null;
+  const label = download
+    ? [t('modelMaintenance.download'), shortModelName(download), size].filter(Boolean).join(' · ')
+    : t('engines.set_up');
+  // The visible label is one short line; the catalogue's full description
+  // stays available to hover and to screen readers.
+  const fullLabel = download
+    ? [t('modelMaintenance.download'), download.label || download.repo_id, size]
+        .filter(Boolean)
+        .join(' · ')
+    : label;
   return (
     <Button
       type="button"
@@ -193,6 +241,8 @@ export function EngineSetupButton({
       className={className}
       disabled={working}
       aria-busy={working || undefined}
+      aria-label={fullLabel}
+      title={fullLabel}
       onClick={() => void setup.fix()}
     >
       {working ? (
@@ -200,7 +250,7 @@ export function EngineSetupButton({
       ) : (
         <WrenchIcon />
       )}
-      <span className="truncate">{t('engines.set_up')}</span>
+      <span className="min-w-0 truncate">{label}</span>
     </Button>
   );
 }

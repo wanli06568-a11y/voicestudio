@@ -335,7 +335,7 @@ export function BackendGate({ children, repairDock }: BackendGateProps) {
     >
       <header
         className={cn(
-          'workspace-titlebar flex shrink-0 items-center gap-2 border-b border-border/50 px-5',
+          'workspace-titlebar flex shrink-0 items-center gap-2 px-5',
           isMac() && 'pl-24',
         )}
       >
@@ -416,6 +416,14 @@ export function BackendGate({ children, repairDock }: BackendGateProps) {
               {cause ? (
                 <p className="text-sm font-medium" data-testid="backend-cause">
                   {t(`backend.cause_${cause}`)}
+                </p>
+              ) : null}
+              {failureCode === 'RUNTIME_DOWNLOAD_INTERRUPTED' &&
+              status.failure?.failedDownloadHost ? (
+                // Name the host that failed, so a blocked github.com is not read
+                // as a slow connection (#4502).
+                <p className="text-sm text-muted-foreground" data-testid="backend-download-host">
+                  {t('backend.download_failed_host', { host: status.failure.failedDownloadHost })}
                 </p>
               ) : null}
               {guidance

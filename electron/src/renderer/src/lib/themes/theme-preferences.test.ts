@@ -9,21 +9,28 @@ import {
 } from './theme-preferences';
 
 describe('theme preferences', () => {
+  it('defaults both appearances to VoiceStudio Classic on first launch', () => {
+    expect(parseThemePreferences(null)).toEqual({
+      mode: 'dark',
+      light: 'heritage',
+      dark: 'heritage',
+    });
+  });
   it('preserves the old appearance and tolerates malformed saved preferences', () => {
     expect(parseThemePreferences('{', 'light')).toEqual({
       mode: 'light',
-      light: 'default',
-      dark: 'default',
+      light: 'heritage',
+      dark: 'heritage',
     });
     expect(parseThemePreferences('{"mode":"invalid","light":"missing","dark":"current"}')).toEqual({
       mode: 'dark',
-      light: 'default',
+      light: 'heritage',
       dark: 'current',
     });
     expect(parseThemePreferences('null')).toEqual({
       mode: 'dark',
-      light: 'default',
-      dark: 'default',
+      light: 'heritage',
+      dark: 'heritage',
     });
   });
   it('resolves independent halves when the operating system changes', () => {
@@ -63,7 +70,7 @@ describe('theme preferences', () => {
         for (const role of THEME_COLOR_ROLES)
           expect(colors?.[role], `${theme.id}/${mode}/${role}`).toEqual(expect.any(String));
       }
-    expect(paletteColors('heritage', 'dark')?.canvas).toBe('#211c29');
+    expect(paletteColors('heritage', 'dark')?.canvas).toBe('#1b181d');
     expect(paletteColors('heritage', 'dark')?.messageAction).toBe('#d3869b');
     expect(parseThemePreferences('{"dark":"heritage"}').dark).toBe('heritage');
     expect(paletteColors('default', 'dark')).toBeNull();

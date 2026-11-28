@@ -2052,9 +2052,11 @@
   "privacy": {
     "translator_online": "Übersetzer ist online: {{provider}}",
     "analytics_title": "VoiceStudio verbessern",
+    "analytics_subtitle": "Standardmäßig aus. Anonyme Daten zu Engine, Sprache, Dauer, Zeichenanzahl und Fehlertypen. Kein Text oder Audio.",
     "translator_offline": "Nur offline",
     "translator_unknown": "Unbekannt",
     "watermark_title": "Unsichtbares Wasserzeichen",
+    "watermark_subtitle": "Standardmäßig aktiv. Kennzeichnet erzeugtes Audio als KI-generiert, damit es später erkannt werden kann. Gilt nur für ab jetzt erzeugtes Audio.",
     "change_translator": "Übersetzer ändern"
   },
   "updates": {
@@ -2192,6 +2194,7 @@
     "cause_noexec": "Der Engine-Ordner erlaubt keine Programmausführung",
     "hint_noexec": "Dieses Laufwerk ist mit noexec eingebunden. Wählen Sie einen Ordner auf einem anderen Laufwerk oder binden Sie es ohne noexec neu ein und versuchen Sie es erneut.",
     "cause_download": "Der Download wurde vor Abschluss der Einrichtung abgebrochen",
+    "download_failed_host": "Download von {{host}} nicht möglich.",
     "hint_download": "Versuchen Sie es erneut, um fortzufahren. Bricht er weiter ab, nutzen Sie ein anderes Netzwerk, schalten Sie Ihr VPN aus oder wählen Sie eine andere Download-Region.",
     "cause_illegal_instruction": "Die Engine stoppte bei einem Befehl, den dieser Computer nicht ausführen konnte",
     "hint_illegal_instruction": "Dem Prozessor fehlt möglicherweise eine Funktion, die die Bibliotheken der Engine benötigen. Kopieren Sie die Diagnosedaten und fügen Sie sie mit Ihrem Prozessormodell einem Bericht bei.",

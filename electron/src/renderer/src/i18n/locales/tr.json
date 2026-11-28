@@ -2052,9 +2052,11 @@
   "privacy": {
     "translator_online": "Çevirmen çevrimiçi: {{provider}}",
     "analytics_title": "VoiceStudio’nun gelişimine katkıda bulun",
+    "analytics_subtitle": "Varsayılan olarak kapalıdır. Motor, dil, süre, karakter sayısı ve hata türlerine ilişkin anonim veriler. Metniniz veya sesiniz asla gönderilmez.",
     "translator_offline": "Yalnızca çevrimdışı",
     "translator_unknown": "Bilinmiyor",
     "watermark_title": "Görünmez filigran",
+    "watermark_subtitle": "Varsayılan olarak açık. Üretilen sesi, sonradan tanınabilmesi için yapay zekâ üretimi olarak işaretler. Yalnızca bundan sonra üretilen sesi etkiler.",
     "change_translator": "Çevirmeni değiştir"
   },
   "updates": {
@@ -2192,6 +2194,7 @@
     "cause_noexec": "Motor klasörü program çalıştırmaya izin vermiyor",
     "hint_noexec": "Bu sürücü noexec ile bağlanmış. Başka bir sürücüde klasör seçin veya sürücüyü noexec olmadan yeniden bağlayıp tekrar deneyin.",
     "cause_download": "İndirme, kurulum bitmeden durdu",
+    "download_failed_host": "{{host}} kaynağından indirilemedi.",
     "hint_download": "Devam etmek için yeniden deneyin. Durmaya devam ederse başka bir ağ deneyin, VPN’i kapatın veya farklı bir indirme bölgesi seçin.",
     "cause_illegal_instruction": "Motor, bu bilgisayarın çalıştıramadığı bir komutta durdu",
     "hint_illegal_instruction": "İşlemcide motor kitaplıklarının gerektirdiği bir özellik eksik olabilir. Tanılama bilgilerini kopyalayıp işlemci modelinizle birlikte bir rapora ekleyin.",
